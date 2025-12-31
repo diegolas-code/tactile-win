@@ -6,7 +6,7 @@ fn main() {
         let hwnd: HWND = GetForegroundWindow();
 
         if hwnd.0 == 0 {
-            println!("No hay ventana activa");
+            println!("No active window found");
             return;
         }
 
@@ -15,14 +15,14 @@ fn main() {
         let length = GetWindowTextW(hwnd, &mut buffer);
 
         if length == 0 {
-            println!("Ventana activa sin título");
+            println!("Active window has no title or an error occurred retrieving the window title");
             return;
         }
 
         let title = String::from_utf16_lossy(&buffer[..length as usize]);
 
         println!("HWND: {:?}", hwnd);
-        println!("Título: {}", title);
+        println!("Title: {}", title);
 
         let mut work_area = RECT::default();
 
@@ -34,11 +34,10 @@ fn main() {
         );
 
         if result.is_err() {
-            eprintln!("No se pudo obtener el work area");
+            eprintln!("Failed to get the work area");
             return;
         }
 
-        // 3. Calcular mitad izquierda
         let width = work_area.right - work_area.left;
         let height = work_area.bottom - work_area.top;
 
@@ -47,7 +46,6 @@ fn main() {
         let new_width = width / 2;
         let new_height = height;
 
-        // 4. Mover ventana
         let _ =SetWindowPos(
             hwnd,
             HWND(0),
