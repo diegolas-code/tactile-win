@@ -1,6 +1,30 @@
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+fn left_half(base: RECT) -> RECT {
+    let width = base.right - base.left;
+    let height = base.bottom - base.top;
+
+    RECT {
+        left: base.left,
+        top: base.top,
+        right: base.left + width / 2,
+        bottom: base.top + height,
+    }
+}
+
+fn right_half(base: RECT) -> RECT {
+    let width = base.right - base.left;
+    let height = base.bottom - base.top;
+
+    RECT {
+        left: base.left + width / 2,
+        top: base.top,
+        right: base.right,
+        bottom: base.top + height,
+    }
+}
+
 fn main() {
     unsafe {
         let hwnd: HWND = GetForegroundWindow();
@@ -38,21 +62,15 @@ fn main() {
             return;
         }
 
-        let width = work_area.right - work_area.left;
-        let height = work_area.bottom - work_area.top;
+        let target = left_half(work_area);
 
-        let left = work_area.left;
-        let top = work_area.top;
-        let new_width = width / 2;
-        let new_height = height;
-
-        let _ =SetWindowPos(
+        let _ = SetWindowPos(
             hwnd,
             HWND(0),
-            left,
-            top,
-            new_width,
-            new_height,
+            target.left,
+            target.top,
+            target.right - target.left,
+            target.bottom - target.top,
             SWP_NOZORDER | SWP_SHOWWINDOW
         );
     }
