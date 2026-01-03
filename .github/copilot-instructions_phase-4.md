@@ -31,19 +31,19 @@ After Phase 3 completion:
 
 ### Phase 4 Objectives
 
-1. **Cross-Monitor Window Management**: Enable window positioning across multiple monitors with proper coordinate handling
+1. **Multi-Monitor Window Management**: Enable window positioning across multiple physical monitors within the main desktop
 2. **Persistent Configuration**: User-customizable grids, hotkeys, and preferences with registry/file storage
 3. **Enhanced User Experience**: System tray integration, on-screen help, visual feedback improvements
-4. **Production Polish**: Comprehensive error handling, logging, installer, auto-start capabilities
-5. **Advanced Selection Features**: Window snapping, size constraints, multi-window operations
+4. **Production Polish**: Comprehensive error handling, logging, portable distribution
+5. **Simple Cross-Monitor Features**: Basic window movement between adjacent monitors only
 
 ---
 
 ## Milestone Overview
 
-### Milestone 1: Cross-Monitor Foundation (High Complexity)
-**Estimated Effort**: 3-4 days  
-**Focus**: Virtual desktop coordinate system and cross-monitor movement
+### Milestone 1: Simple Multi-Monitor Support (Medium Complexity)
+**Estimated Effort**: 2-3 days  
+**Focus**: Basic cross-monitor window positioning with stable monitor identification
 
 ### Milestone 2: Advanced Selection Logic (Medium Complexity)
 **Estimated Effort**: 2-3 days  
@@ -67,176 +67,121 @@ After Phase 3 completion:
 
 ### Technical Challenges
 
-**Virtual Desktop Coordinates**
-- Windows uses a virtual coordinate system where monitors can have negative coordinates
-- Primary monitor is typically at (0,0), but secondary monitors can be at (-1920, 0) etc.
-- The virtual desktop encompasses all monitors in a single coordinate space
+**Multi-Monitor Coordinate Handling**
+- Windows positions multiple monitors in a shared coordinate space
+- Primary monitor typically at (0,0), secondary monitors positioned relative to it
+- Need to handle left/right positioned secondary monitors correctly
 
-**DPI Scaling Complexities**
+**DPI Scaling Differences**
 - Each monitor can have different DPI scaling (100%, 125%, 150%, 200%+)
 - Grid cells must maintain consistent visual size across different DPI monitors
 - Window positioning must account for per-monitor DPI when moving between displays
 
-**Monitor Arrangement Detection**
-- Monitors can be arranged left/right, above/below, or in complex configurations
-- Work area variations due to taskbar placement per monitor
-- Hot-plugging of monitors requires dynamic reconfiguration
+**Stable Monitor Identification**
+- Monitor indices can change with hot-plug events or system restarts
+- Need stable identifiers for persistent configuration
+- Handle monitor disconnection/reconnection gracefully
 
 ### Implementation Tasks
 
-#### Task 1.1: Virtual Desktop Coordinate System
-**File**: `src/platform/virtual_desktop.rs` (new)
-```rust
-pub struct VirtualDesktop {
-    monitors: Vec<MonitorLayout>,
-    bounds: Rect,
-    primary_monitor: usize,
-}
+#### Task 1.1: Multi-Monitor Coordinate System
+**File**: `src/platform/multi_monitor.rs` (new)
 
-pub struct MonitorLayout {
-    monitor: Monitor,
-    virtual_position: Point,
-    grid: Grid,
-}
+**Purpose**: Replace monitor indices with stable `MonitorId` and handle multi-monitor layouts
 
-impl VirtualDesktop {
-    /// Convert from monitor-local coordinates to virtual desktop coordinates
-    pub fn monitor_to_virtual(&self, monitor_index: usize, local_rect: Rect) -> Rect;
-    
-    /// Convert from virtual desktop coordinates to monitor-local coordinates
-    pub fn virtual_to_monitor(&self, virtual_rect: Rect) -> Option<(usize, Rect)>;
-    
-    /// Find which monitor contains a given virtual coordinate point
-    pub fn monitor_from_point(&self, virtual_point: Point) -> Option<usize>;
-}
-```
+**Key Components**:
+- `MonitorId` - Stable identifier based on device path/hardware ID
+- `MultiMonitorLayout` - Manages collection of monitors with their relationships
+- `MonitorInfo` - Individual monitor data including DPI, position, and grid
 
-#### Task 1.2: Enhanced Monitor Management
+**Core Functionality**:
+- Generate stable monitor IDs that persist across system changes
+- Track monitor positioning (left/right relationships)
+- Convert between grid coordinates and screen coordinates
+- Detect horizontally adjacent monitors
+
+**Implementation Notes**:
+- Use Windows `GetDisplayConfigBufferSizes`/`QueryDisplayConfig` APIs for stable IDs
+- Fall back to resolution+position hash for legacy displays
+- Maintain left-to-right ordering for navigation
+- Handle DPI scaling per monitor
+
+#### Task 1.2: Simple Monitor Management
 **File**: `src/platform/monitors.rs` (extend existing)
-```rust
-/// Extended monitor information with virtual desktop context
-pub struct MonitorLayout {
-    pub monitor: Monitor,
-    pub virtual_rect: Rect,           // Position in virtual desktop
-    pub work_area_virtual: Rect,      // Work area in virtual coordinates
-    pub relative_position: MonitorPosition,  // Left, Right, Above, Below primary
-}
 
-pub enum MonitorPosition {
-    Primary,
-    Left(i32),    // pixels to the left of primary
-    Right(i32),   // pixels to the right of primary  
-    Above(i32),   // pixels above primary
-    Below(i32),   // pixels below primary
-}
+**Purpose**: Detect and manage monitor configuration changes
 
-/// Enumerate monitors with virtual desktop layout
-pub fn enumerate_virtual_desktop() -> Result<VirtualDesktop, MonitorError>;
+**Key Features**:
+- Enumerate monitors in left-to-right order
+- Detect hot-plug events (monitor connect/disconnect)
+- Simple primary/secondary classification
+- Handle monitor arrangement changes gracefully
 
-/// Handle monitor configuration changes (hot-plug events)
-pub fn monitor_changed_handler() -> impl Fn();
+**Integration**: Extends existing monitor enumeration with stable ID support
 ```
 
-#### Task 1.3: Cross-Monitor Selection Logic
+#### Task 1.3: Simple Cross-Monitor Selection
 **File**: `src/domain/cross_monitor.rs` (new)
-```rust
-pub struct CrossMonitorSelection {
-    start_monitor: usize,
-    start_coords: GridCoords,
-    end_monitor: Option<usize>,
-    end_coords: Option<GridCoords>,
-}
 
-impl CrossMonitorSelection {
-    /// Calculate the virtual rectangle spanning multiple monitors
-    pub fn calculate_virtual_rect(&self, virtual_desktop: &VirtualDesktop) -> Result<Rect, SelectionError>;
-    
-    /// Validate that cross-monitor selection is reasonable
-    pub fn validate_cross_monitor(&self) -> Result<(), SelectionError>;
-    
-    /// Split cross-monitor selection into per-monitor rectangles
-    pub fn split_to_monitors(&self, virtual_desktop: &VirtualDesktop) -> Vec<(usize, Rect)>;
-}
+**Purpose**: Enable window selection spanning horizontally adjacent monitors
+
+**Policy**: Phase 4 supports only `AdjacentHorizontal` - left/right monitors only
+
+**Key Features**:
+- Track selection start/end across monitors
+- Validate selections are between adjacent monitors only
+- Calculate combined screen rectangle for cross-monitor spans
+- Reject vertical or non-adjacent monitor selections
+
+**UX Constraint**: Clear error feedback when invalid cross-monitor selections attempted
+
+
 ```
 
-#### Task 1.4: Advanced Navigation
+#### Task 1.4: Simple Monitor Navigation
 **File**: `src/input/navigation.rs` (new)
-```rust
-/// Enhanced navigation supporting cross-monitor movement
-pub enum AdvancedNavigation {
-    /// Navigate within current monitor
-    Local(NavigationDirection),
-    /// Navigate to adjacent monitor
-    CrossMonitor(NavigationDirection),
-    /// Navigate to specific monitor by index
-    ToMonitor(usize),
-    /// Navigate to primary monitor
-    ToPrimary,
-}
 
-/// Calculate navigation target based on current position and monitor layout
-pub fn calculate_navigation_target(
-    current_monitor: usize,
-    direction: NavigationDirection,
-    virtual_desktop: &VirtualDesktop
-) -> Option<usize>;
+**Purpose**: Enable navigation between monitors during selection
+
+**Navigation Types**:
+- Left/Right arrow keys to move between adjacent monitors
+- Tab key to cycle through available monitors
+- Return to primary monitor shortcut
+
+**Constraints**: Only horizontal movement between adjacent monitors
+
+**Integration**: Works with existing keyboard capture system
 ```
 
 ### Integration Points
 
 #### State Machine Updates
 **File**: `src/app/state.rs` (extend existing)
-```rust
-pub struct SelectingState {
-    pub active_monitor_index: usize,
-    pub selection: Selection,
-    pub start_time: std::time::Instant,
-    pub cross_monitor_enabled: bool,  // New field
-}
 
-pub enum StateEvent {
-    // ... existing events
-    CrossMonitorToggle,               // New event
-    MonitorChanged(VirtualDesktop),   // New event
-}
+**Changes Required**:
+- Replace `usize` monitor index with `MonitorId` in `SelectingState`
+- Add `cross_monitor_policy` field for policy enforcement
+- Add events for monitor layout changes and navigation
+- Handle monitor hot-plug during active selection
 ```
 
 #### Controller Integration
 **File**: `src/app/controller.rs` (extend existing)
-```rust
-impl AppController {
-    /// Handle cross-monitor navigation
-    pub fn handle_cross_monitor_navigation(&mut self, target_monitor: usize);
-    
-    /// Apply selection that may span multiple monitors
-    pub fn apply_cross_monitor_selection(&mut self);
-    
-    /// Handle monitor configuration changes
-    pub fn handle_monitor_changed(&mut self, new_layout: VirtualDesktop);
-}
+
+**New Methods Required**:
+- Handle monitor navigation during selection mode
+- Apply cross-monitor selections with policy validation
+- Respond to monitor configuration changes
+- Update overlays when active monitor changes
 ```
 
 ### Testing Strategy
 
-```rust
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn virtual_coordinate_conversion() {
-        // Test conversion between monitor-local and virtual coordinates
-    }
-    
-    #[test] 
-    fn cross_monitor_rectangle_calculation() {
-        // Test rectangle calculation spanning multiple monitors
-    }
-    
-    #[test]
-    fn monitor_arrangement_detection() {
-        // Test detection of left/right/above/below arrangements
-    }
-}
-```
+**Focus Areas**:
+- Monitor coordinate conversion accuracy
+- Cross-monitor selection validation 
+- Monitor hot-plug handling
+- Configuration persistence across restarts
 
 ---
 
@@ -258,74 +203,41 @@ mod tests {
 
 #### Task 2.1: Window Constraint Detection
 **File**: `src/platform/window_constraints.rs` (new)
-```rust
-pub struct WindowConstraints {
-    pub min_size: Option<(u32, u32)>,
-    pub max_size: Option<(u32, u32)>,
-    pub is_resizable: bool,
-    pub maintains_aspect_ratio: bool,
-}
 
-impl WindowConstraints {
-    /// Query constraints from window properties
-    pub fn from_hwnd(hwnd: HWND) -> Self;
-    
-    /// Apply constraints to target rectangle
-    pub fn constrain_rect(&self, target: Rect) -> Rect;
-}
-```
+**Purpose**: Detect and respect window size constraints when positioning
+
+**Constraint Types**:
+- Minimum/maximum window sizes
+- Non-resizable windows (dialogs)
+- Aspect ratio requirements
+
+**Behavior**: Apply constraints to target rectangle before positioning window
 
 #### Task 2.2: Selection History
 **File**: `src/domain/selection_history.rs` (new)
-```rust
-pub struct SelectionHistory {
-    history: VecDeque<HistoryEntry>,
-    max_entries: usize,
-}
 
-pub struct HistoryEntry {
-    pub monitor: usize,
-    pub rect: Rect,
-    pub window_title: String,
-    pub timestamp: std::time::Instant,
-}
+**Purpose**: Track recent window selections for quick reuse
 
-impl SelectionHistory {
-    /// Add selection to history
-    pub fn add_selection(&mut self, entry: HistoryEntry);
-    
-    /// Get recent selections for quick access
-    pub fn recent_selections(&self) -> &[HistoryEntry];
-    
-    /// Find similar previous selections
-    pub fn find_similar(&self, current: &Rect) -> Vec<&HistoryEntry>;
-}
-```
+**Features**:
+- Store recent selections with monitor, rect, window title, timestamp
+- Limited history size (e.g., last 10 selections)
+- Find similar selections for same window or size
+- Use stable `MonitorId` for persistence across monitor changes
 
-#### Task 2.3: Advanced Keyboard Handling
-**File**: `src/input/advanced_keyboard.rs` (new)
-```rust
-pub enum AdvancedKeyEvent {
-    GridKey(char),
-    ModifiedGridKey(char, KeyModifiers),
-    QuickSelect(char),        // Ctrl+key for immediate selection
-    HistoryNavigation(i32),   // Alt+number for history
-    SelectionModifier(SelectionModifier),
-}
+**Integration**: Basic foundation for future quick-select features
 
-pub struct KeyModifiers {
-    pub ctrl: bool,
-    pub shift: bool,
-    pub alt: bool,
-}
+#### Task 2.3: Essential Keyboard Handling
+**File**: `src/input/essential_keyboard.rs` (new)
 
-pub enum SelectionModifier {
-    AddToSelection,     // Shift+key
-    SubtractFromSelection, // Ctrl+Shift+key
-    ClearSelection,     // Escape
-    ToggleMode,         // Tab
-}
-```
+**Purpose**: Add minimal keyboard enhancements for Phase 4
+
+**New Key Handling**:
+- Shift+key: Expand current selection
+- Escape: Cancel selection
+- Tab/Shift+Tab: Navigate between monitors
+- Left/Right arrows: Move to adjacent monitor
+
+**Keep Simple**: Avoid complex modifier combinations or advanced shortcuts
 
 ---
 
@@ -348,115 +260,57 @@ pub enum SelectionModifier {
 
 #### Task 3.1: Configuration Schema
 **File**: `src/config/schema.rs` (new)
-```rust
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TactileConfig {
-    pub version: String,
-    pub global: GlobalSettings,
-    pub monitors: HashMap<String, MonitorConfig>,  // Monitor ID -> config
-    pub appearance: AppearanceConfig,
-    pub behavior: BehaviorConfig,
-}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlobalSettings {
-    pub enabled: bool,
-    pub hotkey: HotkeyConfig,
-    pub auto_start: bool,
-}
+**Purpose**: Define user-customizable settings structure
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MonitorConfig {
-    pub grid_rows: u32,
-    pub grid_cols: u32,
-    pub min_cell_width: i32,
-    pub min_cell_height: i32,
-    pub enabled: bool,
-}
+**Configuration Areas**:
+- Global settings (enabled, hotkey, auto-start)
+- Per-monitor settings (grid size, enabled status) using stable `MonitorId`
+- Appearance settings (colors, transparency)
+- Behavior settings (timeout, cross-monitor policy)
 
-#[derive(Serialize, Deserialize, Debug, Clone)]  
-pub struct HotkeyConfig {
-    pub modifiers: Vec<String>,  // ["Control", "Alt"]
-    pub key: String,             // "T"
-    pub enabled: bool,
-}
+**Features**: Versioning, validation, default fallbacks
+
+
 ```
 
 #### Task 3.2: Configuration Persistence
 **File**: `src/config/storage.rs` (new)
-```rust
-pub trait ConfigStorage {
-    fn load(&self) -> Result<TactileConfig, ConfigError>;
-    fn save(&self, config: &TactileConfig) -> Result<(), ConfigError>;
-    fn backup(&self) -> Result<(), ConfigError>;
-}
 
-/// Registry-based storage for system settings
-pub struct RegistryStorage {
-    root_key: String,
-}
+**Purpose**: Save and load user configuration
 
-/// File-based storage for user preferences  
-pub struct FileStorage {
-    config_path: PathBuf,
-}
+**Storage Options**:
+- Registry for system-level settings
+- JSON files for user preferences
+- Hybrid approach with fallbacks
 
-/// Hybrid storage using both registry and files
-pub struct HybridStorage {
-    registry: RegistryStorage,
-    file: FileStorage,
-}
-```
+**Features**: Backup/restore, validation, migration between versions
 
-#### Task 3.3: Configuration Interface
+#### Task 3.3: Configuration Management
 **File**: `src/config/manager.rs` (new)
-```rust
-pub struct ConfigManager {
-    current: TactileConfig,
-    storage: Box<dyn ConfigStorage>,
-    change_listeners: Vec<Box<dyn ConfigChangeListener>>,
-}
 
-pub trait ConfigChangeListener {
-    fn on_config_changed(&self, old: &TactileConfig, new: &TactileConfig);
-}
+**Purpose**: Coordinate configuration loading, validation, and updates
 
-impl ConfigManager {
-    /// Load configuration from storage
-    pub fn load() -> Result<Self, ConfigError>;
-    
-    /// Save current configuration
-    pub fn save(&self) -> Result<(), ConfigError>;
-    
-    /// Update configuration and notify listeners
-    pub fn update<F>(&mut self, updater: F) -> Result<(), ConfigError>
-    where F: FnOnce(&mut TactileConfig);
-    
-    /// Reset to default configuration
-    pub fn reset_to_defaults(&mut self) -> Result<(), ConfigError>;
-}
-```
+**Key Features**:
+- Load configuration with fallback to defaults
+- Save configuration changes
+- Notify application components of config changes
+- Handle configuration corruption gracefully
+
+**Integration**: Plugs into app controller for runtime configuration updates
 
 #### Task 3.4: Runtime Configuration Updates
 **File**: `src/app/config_integration.rs` (new)
-```rust
-impl AppController {
-    /// Apply new configuration without restart
-    pub fn apply_config(&mut self, config: &TactileConfig) -> Result<(), AppError>;
-    
-    /// Validate configuration before applying
-    pub fn validate_config(&self, config: &TactileConfig) -> Result<(), ConfigError>;
-    
-    /// Handle configuration file changes (file watcher)
-    pub fn handle_config_file_changed(&mut self);
-}
 
-impl ConfigChangeListener for AppController {
-    fn on_config_changed(&self, old: &TactileConfig, new: &TactileConfig) {
-        // Reload grids, hotkeys, overlays as needed
-    }
-}
-```
+**Purpose**: Apply configuration changes without application restart
+
+**Integration Points**:
+- Update grid configurations for each monitor
+- Change hotkey registration
+- Apply appearance changes to overlays
+- Validate configuration before applying
+
+**Error Handling**: Graceful rollback on configuration errors
 
 ---
 
@@ -483,122 +337,55 @@ impl ConfigChangeListener for AppController {
 
 ### Implementation Tasks
 
-#### Task 4.1: System Tray Implementation
+#### Task 4.1: System Tray Integration
 **File**: `src/ui/system_tray.rs` (new)
-```rust
-pub struct SystemTray {
-    hwnd: HWND,
-    menu: HMENU,
-    icon: HICON,
-    tooltip: String,
-}
 
-impl SystemTray {
-    /// Create system tray icon
-    pub fn new(tooltip: &str) -> Result<Self, TrayError>;
-    
-    /// Update icon and tooltip
-    pub fn update(&mut self, enabled: bool, status: &str);
-    
-    /// Show context menu
-    pub fn show_context_menu(&self, x: i32, y: i32);
-    
-    /// Handle tray icon messages
-    pub fn handle_message(&self, msg: u32, wparam: WPARAM, lparam: LPARAM);
-}
+**Purpose**: Persistent system tray presence with quick access menu
 
-pub enum TrayMenuAction {
-    Toggle,
-    Configure, 
-    ShowHelp,
-    Exit,
-    RecentSelection(usize),
-}
-```
+**Features**:
+- System tray icon with context menu
+- Quick enable/disable toggle
+- Access to configuration
+- Application exit option
+- Status indication (enabled/disabled)
 
 #### Task 4.2: Help System
 **File**: `src/ui/help_overlay.rs` (new)
-```rust
-pub struct HelpOverlay {
-    help_mode: HelpMode,
-    current_page: usize,
-    total_pages: usize,
-}
 
-pub enum HelpMode {
-    QuickReference,    // Show keyboard shortcuts
-    Tutorial,          // Interactive tutorial
-    ContextualTips,    // Tips based on current state
-}
+**Purpose**: On-screen help and tutorials for new users
 
-impl HelpOverlay {
-    /// Show help overlay over current grid
-    pub fn show(&mut self, mode: HelpMode);
-    
-    /// Navigate help pages
-    pub fn next_page(&mut self);
-    pub fn prev_page(&mut self);
-    
-    /// Render help content onto overlay
-    pub fn render_help_content(&self, canvas: &mut tiny_skia::Pixmap);
-}
-```
+**Help Types**:
+- Quick keyboard reference overlay
+- First-time user tutorial
+- Context-sensitive tips
 
-#### Task 4.3: Enhanced Visual Feedback
-**File**: `src/ui/visual_effects.rs` (new)  
-```rust
-pub struct VisualEffects {
-    animation_enabled: bool,
-    high_contrast: bool,
-    color_scheme: ColorScheme,
-}
+**Display**: Overlay help content on grid during selection mode
 
-pub struct ColorScheme {
-    pub grid_color: Color,
-    pub selection_color: Color,
-    pub text_color: Color,
-    pub background_alpha: f32,
-}
+#### Task 4.3: Visual Improvements
+**File**: `src/ui/visual_effects.rs` (new)
 
-impl VisualEffects {
-    /// Animate overlay transitions
-    pub fn animate_show(&self, overlay: &mut OverlayWindow, duration_ms: u32);
-    pub fn animate_hide(&self, overlay: &mut OverlayWindow, duration_ms: u32);
-    
-    /// Apply selection preview effect
-    pub fn preview_selection(&self, rect: Rect, canvas: &mut tiny_skia::Pixmap);
-    
-    /// Render with accessibility support
-    pub fn render_high_contrast(&self, canvas: &mut tiny_skia::Pixmap);
-}
-```
+**Purpose**: Basic visual polish and accessibility improvements
+
+**Improvements**:
+- High-contrast mode support
+- Customizable color schemes
+- Selection preview effects
+- Smooth overlay transitions
+
+**Scope**: Keep animations simple - focus on usability over complexity
 
 #### Task 4.4: Error Handling & User Feedback
 **File**: `src/app/user_feedback.rs` (new)
-```rust
-pub struct FeedbackSystem {
-    notification_level: NotificationLevel,
-    error_history: Vec<ErrorEntry>,
-}
 
-pub enum NotificationLevel {
-    Silent,      // No user notifications
-    Minimal,     // Critical errors only  
-    Standard,    // Errors and warnings
-    Verbose,     // All feedback including info
-}
+**Purpose**: Comprehensive error handling with user-friendly feedback
 
-impl FeedbackSystem {
-    /// Show user-friendly error message
-    pub fn show_error(&mut self, error: &AppError);
-    
-    /// Show temporary status message
-    pub fn show_status(&self, message: &str, duration_ms: u32);
-    
-    /// Log error for diagnostics
-    pub fn log_error(&mut self, error: &AppError, context: &str);
-}
-```
+**Features**:
+- Clear error messages for failed operations
+- Status notifications for successful actions
+- Graceful degradation on system errors
+- Diagnostic logging for troubleshooting
+
+**Priority**: Focus on cross-monitor selection errors and configuration issues
 
 ---
 
@@ -623,120 +410,58 @@ impl FeedbackSystem {
 
 ### Implementation Tasks
 
-#### Task 5.1: MSI Installer
-**File**: `installer/tactile-win.wxs` (new)
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="Tactile-Win" Language="1033" Version="1.0.0" 
-           Manufacturer="Tactile-Win Project">
-    
-    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"/>
-    
-    <Feature Id="MainFeature" Title="Tactile-Win" Level="1">
-      <ComponentRef Id="TactileWinExe"/>
-      <ComponentRef Id="AutoStartRegistry"/>
-    </Feature>
-    
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFilesFolder">
-        <Directory Id="INSTALLFOLDER" Name="Tactile-Win">
-          <Component Id="TactileWinExe">
-            <File Source="target/release/tactile-win.exe" KeyPath="yes"/>
-          </Component>
-        </Directory>
-      </Directory>
-    </Directory>
-    
-    <Component Id="AutoStartRegistry">
-      <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run">
-        <RegistryValue Name="Tactile-Win" Value="[INSTALLFOLDER]tactile-win.exe" Type="string"/>
-      </RegistryKey>
-    </Component>
-  </Product>
-</Wix>
-```
+#### Task 5.1: Portable Distribution
+**File**: `scripts/create_portable.ps1` (new)
 
-#### Task 5.2: Integration Test Suite  
-**File**: `tests/integration/full_workflow.rs` (new)
-```rust
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-    
-    #[test]
-    #[cfg(windows)]
-    fn test_complete_selection_workflow() {
-        // Test full user workflow from hotkey to window positioning
-    }
-    
-    #[test]
-    fn test_multi_monitor_configuration() {
-        // Test behavior with different monitor configurations
-    }
-    
-    #[test]
-    fn test_configuration_persistence() {
-        // Test configuration save/load cycle
-    }
-    
-    #[test]
-    fn test_resource_cleanup() {
-        // Test that all resources are properly cleaned up
-    }
-}
-```
+**Purpose**: Create simple portable distribution package for Phase 4
 
-#### Task 5.3: Performance Optimization
-**File**: `src/performance/optimizations.rs` (new)
-```rust
-/// Performance monitoring and optimization utilities
-pub struct PerformanceMonitor {
-    metrics: HashMap<String, PerformanceMetric>,
-}
+**Package Contents**:
+- Release executable
+- Documentation files (README, LICENSE)
+- Optional auto-start batch file
+- Zip package for distribution
 
-pub struct PerformanceMetric {
-    pub average_ms: f64,
-    pub max_ms: f64,
-    pub sample_count: usize,
-}
+**Approach**: Keep simple - MSI installer deferred to later phase
 
-impl PerformanceMonitor {
-    /// Measure function execution time
-    pub fn measure<T, F>(&mut self, name: &str, f: F) -> T
-    where F: FnOnce() -> T;
-    
-    /// Report performance statistics
-    pub fn report(&self) -> String;
-}
-```
+#### Task 5.2: Integration Testing
+**File**: `tests/integration/` (new)
 
-#### Task 5.4: Build & Release Automation
+**Purpose**: Validate complete Phase 4 workflows
+
+**Test Scenarios**:
+- Complete selection workflow from hotkey to window positioning
+- Multi-monitor configuration handling
+- Configuration persistence across restarts
+- Resource cleanup verification
+
+**Focus**: End-to-end user scenarios rather than unit test details
+
+#### Task 5.3: Release Validation
+**File**: `src/app/release_validation.rs` (new)
+
+**Purpose**: Basic validation before release
+
+**Validation Areas**:
+- System compatibility checks
+- Resource lifecycle verification
+- Configuration system validation
+- Core functionality smoke tests
+
+**Keep Simple**: No complex performance monitoring - focus on correctness
+
+#### Task 5.4: Build Automation
 **File**: `.github/workflows/release.yml` (new)
-```yaml
-name: Release Build
-on:
-  push:
-    tags: ['v*']
 
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build Release
-        run: cargo build --release
-      - name: Build Installer  
-        run: candle installer/tactile-win.wxs && light tactile-win.wixobj
-      - name: Code Sign
-        run: signtool sign /fd SHA256 tactile-win.msi
-      - name: Create Release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Tactile-Win ${{ github.ref }}
-          files: tactile-win.msi
-```
+**Purpose**: Automated build and release process
+
+**Workflow Steps**:
+- Trigger on version tags
+- Build release binary
+- Create portable package
+- Upload artifacts
+- Create GitHub release
+
+**Keep Simple**: No code signing or complex MSI building in Phase 4
 
 ---
 
@@ -752,69 +477,55 @@ src/
 │   ├── storage.rs            # Persistence layer
 │   └── manager.rs            # Configuration lifecycle
 ├── platform/
-│   ├── virtual_desktop.rs    # NEW: Virtual desktop coordinates
+│   ├── multi_monitor.rs      # NEW: Simple multi-monitor layout with MonitorId
 │   ├── window_constraints.rs # NEW: Window property detection
 │   └── ...existing files...
 ├── domain/
-│   ├── cross_monitor.rs      # NEW: Cross-monitor selection logic  
+│   ├── cross_monitor.rs      # NEW: Simple cross-monitor selection (horizontal only)
 │   ├── selection_history.rs  # NEW: Selection history tracking
 │   └── ...existing files...
 ├── input/
-│   ├── advanced_keyboard.rs  # NEW: Enhanced keyboard handling
-│   ├── navigation.rs         # NEW: Advanced navigation
+│   ├── essential_keyboard.rs # NEW: Essential keyboard handling only
+│   ├── navigation.rs         # NEW: Simple monitor navigation (left/right)
 │   └── ...existing files...
 ├── ui/
 │   ├── system_tray.rs        # NEW: System tray integration
 │   ├── help_overlay.rs       # NEW: Help system
-│   ├── visual_effects.rs     # NEW: Animations and effects
+│   ├── visual_effects.rs     # NEW: Basic visual improvements
 │   └── ...existing files...
 ├── app/
 │   ├── config_integration.rs # NEW: Config-app integration
 │   ├── user_feedback.rs      # NEW: Error handling & feedback
+│   ├── release_validation.rs # NEW: Basic release checks
 │   └── ...existing files...
-└── performance/               # NEW: Performance monitoring
-    ├── mod.rs
-    └── optimizations.rs
+└── scripts/                   # NEW: Build and distribution scripts
+    └── create_portable.ps1
 ```
 
 ### Dependency Updates
 
-**Cargo.toml additions**:
-```toml
-[dependencies]
-# Existing dependencies...
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-winreg = "0.52"               # Windows Registry access
-notify = "6.0"                # File system watching
-dirs = "5.0"                  # Standard directories
-log = "0.4"                   # Logging framework  
-env_logger = "0.10"           # Log implementation
+### Dependencies
 
-[build-dependencies]  
-winres = "0.1"                # Windows resource compiler
-```
+**New Dependencies for Phase 4**:
+- `serde` + `serde_json` for configuration serialization
+- `winreg` for Windows Registry access
+- `dirs` for standard directory paths
+- `log` + `env_logger` for diagnostic logging
+- `thiserror` for structured error handling
+
+**Note**: File watching and build resources deferred to later phases
 
 ### Error Handling Strategy
 
-All Phase 4 modules must implement comprehensive error handling:
+**Approach**: Comprehensive error handling with graceful degradation
 
-```rust
-#[derive(thiserror::Error, Debug)]
-pub enum Phase4Error {
-    #[error("Virtual desktop configuration error: {0}")]
-    VirtualDesktop(String),
-    
-    #[error("Configuration storage error: {0}")]
-    ConfigStorage(#[from] ConfigError),
-    
-    #[error("System tray error: {0}")]
-    SystemTray(String),
-    
-    #[error("Cross-monitor operation failed: {0}")]
-    CrossMonitor(String),
-}
-```
+**Key Areas**:
+- Monitor enumeration failures
+- Configuration corruption
+- Cross-monitor operation errors
+- System integration issues
+
+**User Experience**: Clear error messages, automatic fallbacks, no crashes
 
 ---
 
@@ -847,6 +558,30 @@ pub enum Phase4Error {
 - Large DPI scaling (200%+) support
 
 ---
+
+## Critical Implementation Requirements
+
+### Monitor ID Stability (CRITICAL)
+
+**This is the most important requirement for Phase 4 success.**
+
+- **Problem**: Using `usize` indices for monitors breaks with hot-plug, reboot, and configuration changes
+- **Solution**: Implement stable `MonitorId` based on Windows device paths or hardware identifiers
+- **Implementation**: 
+  - Use `GetDisplayConfigBufferSizes` and `QueryDisplayConfig` for stable monitor identification
+  - Generate `MonitorId` from device instance path or EDID when available
+  - Fall back to resolution + position hash for basic displays
+- **Validation**: All monitor references must use `MonitorId`, never indices
+
+### Simple Cross-Monitor Policy (CRITICAL)
+
+**Keep Phase 4 scope limited to horizontal adjacent monitors only.**
+
+- **Phase 4 Scope**: Only `AdjacentHorizontal` policy - left/right monitors only
+- **No Vertical**: Defer above/below monitor arrangements to later phases
+- **No Complex Layouts**: L-shaped or diagonal arrangements not supported in Phase 4
+- **Clear UX**: Users understand they can only span between left/right adjacent monitors
+- **Single Desktop Only**: Application operates only on the main Windows desktop
 
 ## Risk Assessment & Mitigation
 
