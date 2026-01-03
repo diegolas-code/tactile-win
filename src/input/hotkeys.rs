@@ -31,6 +31,7 @@ pub enum HotkeyModifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
     Space = 0x20,
+    T = 0x54, // Letter T
     F1 = 0x70,
     F2 = 0x71,
     F3 = 0x72,

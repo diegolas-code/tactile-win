@@ -283,6 +283,43 @@ impl Selection {
             }
         }
     }
+
+    /// Adds a key to the selection process
+    /// 
+    /// This method handles the two-step selection workflow:
+    /// - First key starts the selection
+    /// - Second key completes the selection
+    /// 
+    /// # Arguments  
+    /// * `coords` - Grid coordinates for the pressed key
+    /// 
+    /// # Returns
+    /// Ok(()) if key was processed successfully, or SelectionError if invalid
+    /// 
+    /// # Example
+    /// ```rust
+    /// use tactile_win::domain::{selection::Selection, keyboard::GridCoords};
+    /// 
+    /// let mut selection = Selection::new();
+    /// selection.add_coords(GridCoords::new(0, 0))?;  // Start selection
+    /// assert!(selection.is_in_progress());
+    /// 
+    /// selection.add_coords(GridCoords::new(1, 1))?;  // Complete selection
+    /// assert!(selection.is_complete());
+    /// ```
+    pub fn add_coords(&mut self, coords: GridCoords) -> Result<(), SelectionError> {
+        match &self.state {
+            SelectionState::NotStarted => {
+                self.start(coords)
+            },
+            SelectionState::InProgress { .. } => {
+                self.complete(coords)
+            },
+            SelectionState::Complete { .. } => {
+                Err(SelectionError::SelectionAlreadyComplete)
+            }
+        }
+    }
 }
 
 /// Normalizes two coordinates into top-left and bottom-right corners

@@ -256,6 +256,22 @@ impl Grid {
         self.keyboard_layout.key_to_coords(key).is_ok()
     }
 
+    /// Converts a keyboard key to grid coordinates
+    /// 
+    /// # Arguments
+    /// * `key` - Keyboard key to convert
+    /// 
+    /// # Returns
+    /// Grid coordinates for the key or GridError if key is invalid
+    pub fn key_to_coords(&self, key: char) -> Result<GridCoords, GridError> {
+        self.keyboard_layout.key_to_coords(key)
+            .map_err(|_| GridError::InvalidCoordinates { 
+                coords: GridCoords::new(0, 0), // Placeholder
+                max_row: self.rows - 1,
+                max_col: self.cols - 1,
+            })
+    }
+
     /// Creates a bounding rectangle from two grid coordinates
     /// 
     /// This method creates the smallest rectangle that encompasses both
