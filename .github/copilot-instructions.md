@@ -52,12 +52,16 @@ To ensure optimal performance and maintainability, the following dependencies an
 - **API Requirements**: Use `GetDpiForMonitor`, `GetSystemMetrics` with DPI context
 - **Scaling Support**: Handle 100%, 125%, 150%, 200%+ scaling factors
 - **Per-Monitor DPI**: Support different DPI values across multiple monitors
+- **Initialization**: Include manifest file or call `SetProcessDpiAwarenessContext` in main.rs startup
+- **Coordinate Virtualization**: Without proper DPI awareness, Windows will provide "fake" scaled coordinates
 
 #### Window Styles for Overlay
 - **WS_EX_NOACTIVATE**: Overlay must not steal focus from active window
 - **WS_EX_TOPMOST**: Ensure overlay appears above all other windows
 - **WS_EX_LAYERED**: Enable transparency and alpha blending
 - **WS_EX_TOOLWINDOW**: Prevent overlay from appearing in taskbar
+- **Z-Order Management**: Other topmost applications (Task Manager, etc.) can hide overlay
+- **Keep-Alive Strategy**: Implement periodic z-order refresh during selection mode
 
 ---
 
