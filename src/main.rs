@@ -11,6 +11,7 @@ mod domain;
 mod platform;
 mod app;
 mod input;
+mod ui;
 
 use domain::core::Rect;
 use domain::keyboard::{QwertyLayout, GridCoords};

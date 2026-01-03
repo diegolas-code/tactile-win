@@ -8,6 +8,7 @@ use crate::app::state::{AppState, StateEvent, StateMachine, NavigationDirection}
 use crate::input::{HotkeyManager, HotkeyError, HotkeyModifier, VirtualKey};
 use crate::platform::monitors::{enumerate_monitors, Monitor, MonitorError};
 use crate::domain::grid::Grid;
+use crate::ui::{OverlayManager, OverlayError};
 
 /// Application errors that can occur during controller operations
 #[derive(Debug)]
@@ -20,6 +21,8 @@ pub enum AppError {
     NoSuitableMonitors,
     /// Hotkey management failed
     HotkeyError(HotkeyError),
+    /// Overlay management failed
+    OverlayError(OverlayError),
 }
 
 impl From<MonitorError> for AppError {
@@ -34,6 +37,12 @@ impl From<HotkeyError> for AppError {
     }
 }
 
+impl From<OverlayError> for AppError {
+    fn from(err: OverlayError) -> Self {
+        AppError::OverlayError(err)
+    }
+}
+
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -41,6 +50,7 @@ impl std::fmt::Display for AppError {
             AppError::GridCreationFailed(msg) => write!(f, "Grid creation failed: {}", msg),
             AppError::NoSuitableMonitors => write!(f, "No suitable monitors for grid positioning"),
             AppError::HotkeyError(e) => write!(f, "Hotkey error: {:?}", e),
+            AppError::OverlayError(e) => write!(f, "Overlay error: {:?}", e),
         }
     }
 }
@@ -102,25 +112,55 @@ impl Drop for HotkeyManagerGuard {
     }
 }
 
-/// RAII wrapper for overlay management (placeholder for now)
+/// RAII wrapper for overlay management
 /// 
-/// This will be implemented in Milestone 3: Basic Overlay
+/// Automatically manages overlay windows and their lifecycle.
+/// Provides thread-safe access to overlay functionality.
 pub struct OverlayManagerGuard {
-    // Will contain OverlayManager in Milestone 3
-    _placeholder: (),
+    manager: OverlayManager,
 }
 
 impl OverlayManagerGuard {
-    pub fn new() -> Result<Self, AppError> {
-        // Placeholder implementation
-        Ok(Self { _placeholder: () })
+    /// Create a new overlay manager and initialize with monitors
+    pub fn new(monitors: &[Monitor]) -> Result<Self, AppError> {
+        let mut manager = OverlayManager::new();
+        
+        // Initialize overlay windows for all monitors
+        manager.initialize(monitors)?;
+        
+        Ok(Self { manager })
+    }
+    
+    /// Show overlays on all monitors
+    pub fn show_all(&mut self) {
+        self.manager.show_all();
+    }
+    
+    /// Hide overlays on all monitors
+    pub fn hide_all(&mut self) {
+        self.manager.hide_all();
+    }
+    
+    /// Toggle overlay visibility
+    pub fn toggle(&mut self) {
+        self.manager.toggle();
+    }
+    
+    /// Check if overlays are visible
+    pub fn is_visible(&self) -> bool {
+        self.manager.is_visible()
+    }
+    
+    /// Get overlay count
+    pub fn overlay_count(&self) -> usize {
+        self.manager.overlay_count()
     }
 }
 
 impl Drop for OverlayManagerGuard {
     fn drop(&mut self) {
-        // RAII cleanup will be implemented in Milestone 3
-        println!("OverlayManagerGuard: Cleanup (placeholder)");
+        // Hide all overlays before cleanup
+        self.manager.hide_all();
     }
 }
 
@@ -156,7 +196,7 @@ pub struct AppController {
     /// Hotkey management with guaranteed cleanup
     hotkey_manager: HotkeyManagerGuard,
     /// Overlay management with guaranteed cleanup
-    _overlay_manager: OverlayManagerGuard,
+    overlay_manager: OverlayManagerGuard,
     /// Keyboard capture with guaranteed cleanup
     _keyboard_capture: KeyboardCaptureGuard,
     /// Available monitors (stable configuration)
@@ -200,7 +240,7 @@ impl AppController {
 
         // Initialize RAII-wrapped components
         let mut hotkey_manager = HotkeyManagerGuard::new()?;
-        let overlay_manager = OverlayManagerGuard::new()?;
+        let overlay_manager = OverlayManagerGuard::new(&monitors)?;
         let keyboard_capture = KeyboardCaptureGuard::new()?;
 
         // Initialize with idle state
@@ -218,7 +258,7 @@ impl AppController {
         Ok(Self {
             state,
             hotkey_manager,
-            _overlay_manager: overlay_manager,
+            overlay_manager,
             _keyboard_capture: keyboard_capture,
             monitors,
             grids,
