@@ -59,8 +59,12 @@ pub enum MonitorError {
     InfoFailed(HMONITOR),
     /// Failed to get DPI information
     DpiFailed(HMONITOR),
-    /// No monitors found
+    /// No monitors found during enumeration
     NoMonitors,
+    /// Monitor not found at specified location
+    MonitorNotFound,
+    /// Failed to lookup monitor information
+    MonitorLookupFailed,
 }
 
 impl std::fmt::Display for MonitorError {
@@ -69,7 +73,9 @@ impl std::fmt::Display for MonitorError {
             MonitorError::EnumerationFailed => write!(f, "Failed to enumerate monitors"),
             MonitorError::InfoFailed(handle) => write!(f, "Failed to get info for monitor {:?}", handle),
             MonitorError::DpiFailed(handle) => write!(f, "Failed to get DPI for monitor {:?}", handle),
-            MonitorError::NoMonitors => write!(f, "No monitors found"),
+            MonitorError::NoMonitors => write!(f, "No monitors found during enumeration"),
+            MonitorError::MonitorNotFound => write!(f, "Monitor not found at specified location"),
+            MonitorError::MonitorLookupFailed => write!(f, "Failed to lookup monitor information"),
         }
     }
 }
@@ -83,6 +89,12 @@ struct EnumContext {
 }
 
 /// Callback function for monitor enumeration
+/// 
+/// **Resilience Strategy**: This callback continues enumeration even if individual
+/// monitors fail to provide complete information (monitor info or DPI data).
+/// **Decision**: We prefer to continue with partial data rather than abort the
+/// entire enumeration process. This ensures the application remains functional
+/// even with problematic monitors or drivers.
 unsafe extern "system" fn enum_monitor_proc(
     hmonitor: HMONITOR,
     _hdc: HDC,
@@ -102,7 +114,8 @@ unsafe extern "system" fn enum_monitor_proc(
     };
     
         if GetMonitorInfoW(hmonitor, &mut monitor_info.monitorInfo) == FALSE {
-        return TRUE; // Continue enumeration even if one monitor fails
+        // Continue enumeration even if one monitor fails - prefer partial data over complete failure
+        return TRUE;
     }
     
     // Get DPI information
@@ -110,7 +123,7 @@ unsafe extern "system" fn enum_monitor_proc(
     let mut dpi_y: u32 = 96;
     
     if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_err() {
-        // Fallback to system DPI if per-monitor DPI fails
+        // Fallback to system DPI if per-monitor DPI fails - continue with reasonable defaults
         dpi_x = 96;
         dpi_y = 96;
     }
@@ -181,7 +194,7 @@ pub fn get_monitor_from_point(x: i32, y: i32) -> Result<Monitor, MonitorError> {
     unsafe {
         let hmonitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
         if hmonitor.is_invalid() {
-            return Err(MonitorError::EnumerationFailed);
+            return Err(MonitorError::MonitorNotFound);
         }
         
         // Get all monitors and find the one with matching handle
@@ -189,7 +202,7 @@ pub fn get_monitor_from_point(x: i32, y: i32) -> Result<Monitor, MonitorError> {
         monitors
             .into_iter()
             .find(|m| m.handle == hmonitor)
-            .ok_or(MonitorError::InfoFailed(hmonitor))
+            .ok_or(MonitorError::MonitorLookupFailed)
     }
 }
 

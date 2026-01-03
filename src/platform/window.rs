@@ -161,10 +161,10 @@ pub fn position_window(hwnd: HWND, target_rect: Rect) -> Result<(), WindowError>
         
         // Position the window
         // SWP_NOACTIVATE: Don't activate the window (preserve focus)
-        // SWP_NOZORDER: Don't change Z-order position
+        // SWP_NOZORDER: Don't change Z-order position (HWND parameter ignored)
         let result = SetWindowPos(
             hwnd,
-            HWND_TOP,
+            HWND(0), // Ignored due to SWP_NOZORDER flag
             target_rect.x,
             target_rect.y,
             target_rect.w,
