@@ -127,6 +127,7 @@ impl StateMachine {
         match (current_state, event) {
             // From Idle state
             (AppState::Idle, StateEvent::HotkeyPressed) => {
+                println!("STATE MACHINE: Idle -> Selecting (starting selection on monitor 0)");
                 // Start selection on primary monitor (index 0)
                 AppState::Selecting(SelectingState::new(0))
             },

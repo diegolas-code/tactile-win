@@ -92,10 +92,13 @@ pub struct HotkeyManagerGuard {
 impl HotkeyManagerGuard {
     /// Create a new hotkey manager and register the main application hotkey
     pub fn new() -> Result<Self, AppError> {
+        println!("HotkeyManagerGuard: Creating new hotkey manager...");
         let mut manager = HotkeyManager::new();
 
         // Start the message loop
+        println!("HotkeyManagerGuard: Starting hotkey manager...");
         manager.start()?;
+        println!("HotkeyManagerGuard: Hotkey manager started successfully");
 
         Ok(Self {
             manager,
@@ -103,12 +106,12 @@ impl HotkeyManagerGuard {
         })
     }
 
-    /// Register the main application hotkey (Ctrl+Alt+T by default)
+    /// Register the main application hotkey (Ctrl+Shift+T for testing)
     pub fn register_main_hotkey<F>(&mut self, callback: F) -> Result<(), AppError>
         where F: Fn() + Send + Sync + 'static
     {
         let hotkey_id = self.manager.register_hotkey(
-            &[HotkeyModifier::Control, HotkeyModifier::Alt],
+            &[HotkeyModifier::Control, HotkeyModifier::Shift],
             VirtualKey::T,
             Arc::new(callback)
         )?;
@@ -322,13 +325,28 @@ impl AppController {
         let state = Arc::new(Mutex::new(AppState::default()));
         let state_for_callback = Arc::clone(&state);
 
-        // Register main application hotkey
-        hotkey_manager.register_main_hotkey(move || {
+        // Register main application hotkey  
+        // Note: The closure cannot access self, so we only update state here
+        // The main event loop will detect state changes and handle overlays
+        println!("AppController: Registering Ctrl+Shift+F12 hotkey...");
+        match hotkey_manager.register_main_hotkey(move || {
+            println!("=== HOTKEY PRESSED ===");
+            println!("HOTKEY TRIGGERED: Ctrl+Shift+F12 detected!");
             // Create hotkey event and process it through state machine
             let mut state_guard = state_for_callback.lock().unwrap();
-            let current_state = state_guard.clone();
-            *state_guard = StateMachine::process_event(current_state, StateEvent::HotkeyPressed, 1);
-        })?;
+            let old_state = state_guard.clone();
+            println!("State before hotkey: {:?}", old_state);
+            let new_state = StateMachine::process_event(old_state, StateEvent::HotkeyPressed, 1);
+            println!("State after hotkey: {:?}", new_state);
+            *state_guard = new_state;
+            println!("=== HOTKEY PROCESSING COMPLETE ===");
+        }) {
+            Ok(()) => println!("AppController: Hotkey registered successfully"),
+            Err(e) => {
+                println!("AppController: Failed to register hotkey: {}", e);
+                return Err(e);
+            }
+        }
 
         Ok(Self {
             state,
@@ -392,6 +410,27 @@ impl AppController {
         let new_state = StateMachine::process_event(current_state, event, self.monitor_count());
         *state_guard = new_state.clone();
         new_state
+    }
+
+    /// Handle state transition side effects (must be called after process_event)
+    pub fn handle_state_transition(&mut self, old_state: &AppState, new_state: &AppState) {
+        match (old_state, new_state) {
+            (AppState::Idle, AppState::Selecting(_)) => {
+                println!("CONTROLLER: Transitioning to Selecting state - showing overlays");
+                // Show overlays when entering selection mode
+                self.overlay_manager.show_all();
+                println!("CONTROLLER: Overlays shown");
+            },
+            (AppState::Selecting(_), AppState::Idle) => {
+                println!("CONTROLLER: Transitioning to Idle state - hiding overlays");
+                // Hide overlays when exiting selection mode
+                self.overlay_manager.hide_all();
+                println!("CONTROLLER: Overlays hidden");
+            },
+            _ => {
+                // No UI changes needed for other transitions
+            }
+        }
     }
 
     /// Handles hotkey press events
@@ -636,13 +675,24 @@ impl AppController {
             );
         }
 
-        println!("Event loop started. Press Ctrl+Alt+T to activate tactile mode.");
+        println!("Event loop started. Press Ctrl+Shift+F12 to activate tactile mode.");
+
+        // Track state for overlay management
+        let mut last_state = AppState::default();
 
         // Main Windows message loop
         unsafe {
             let mut msg = MSG::default();
 
             loop {
+                // Check for state changes and handle overlay visibility
+                let current_state = self.get_state();
+                if !std::mem::discriminant(&last_state).eq(&std::mem::discriminant(&current_state)) {
+                    println!("STATE CHANGE DETECTED: {:?} -> {:?}", last_state, current_state);
+                    self.handle_state_transition(&last_state, &current_state);
+                    last_state = current_state;
+                }
+
                 // Check for Windows messages with timeout for periodic tasks
                 let msg_result = PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE);
 

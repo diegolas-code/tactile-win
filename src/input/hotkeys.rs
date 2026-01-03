@@ -16,6 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, 
     PostQuitMessage, RegisterClassW, MSG, 
     WNDCLASSW, WM_HOTKEY, WM_DESTROY, WS_OVERLAPPED,
+    SetWindowLongPtrW, GetWindowLongPtrW, GWLP_USERDATA,
 };
 
 /// Modifier keys for hotkey combinations
@@ -30,6 +31,7 @@ pub enum HotkeyModifier {
 /// Virtual key codes for hotkey registration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
+    Tab = 0x09,  // Tab key
     Space = 0x20,
     T = 0x54, // Letter T
     F1 = 0x70,
@@ -123,9 +125,14 @@ impl HotkeyManager {
         
         // Start message loop thread
         let handle = thread::spawn(move || {
-            if let Err(_e) = Self::message_loop_thread(shutdown, window_handle, hotkeys) {
-                // Log error in a real application
-                eprintln!("Hotkey message loop error: {_e:?}");
+            println!("HotkeyManager: Starting message loop thread...");
+            match Self::message_loop_thread(shutdown, window_handle, hotkeys) {
+                Ok(()) => {
+                    println!("HotkeyManager: Message loop thread terminated normally");
+                }
+                Err(e) => {
+                    eprintln!("HotkeyManager: Message loop error: {e:?}");
+                }
             }
         });
         
@@ -301,10 +308,22 @@ impl HotkeyManager {
                 WM_HOTKEY => {
                     let hotkey_id = wparam.0 as u32;
                     
-                    // Try to get the hotkeys map from window data
-                    // In a full implementation, we'd use SetWindowLongPtrW/GetWindowLongPtrW
-                    // For now, we'll need to find another way to access the callbacks
-                    // This is a limitation of this simplified approach
+                    // Get the hotkeys map from window user data
+                    let hotkeys_ptr = unsafe { 
+                        GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Arc<Mutex<HashMap<u32, HotkeyCallback>>>
+                    };
+                    
+                    if !hotkeys_ptr.is_null() {
+                        let hotkeys = unsafe { &*hotkeys_ptr };
+                        
+                        // Find and call the callback
+                        if let Ok(guard) = hotkeys.lock() {
+                            if let Some(callback) = guard.get(&hotkey_id) {
+                                // Dereference the Arc to get the function and call it
+                                (**callback)();
+                            }
+                        }
+                    }
                     
                     LRESULT(0)
                 }
@@ -350,6 +369,11 @@ impl HotkeyManager {
         
         if hwnd.0 == 0 {
             return Err(HotkeyError::MessageWindowCreationFailed);
+        }
+        
+        // Store the hotkeys map pointer in the window's user data
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, hotkeys as *const _ as isize);
         }
         
         Ok(hwnd)
