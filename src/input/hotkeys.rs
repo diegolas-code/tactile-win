@@ -8,12 +8,13 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use windows::core::PCWSTR;
+use windows::core::{w};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, 
-    PostQuitMessage, RegisterClassW, RegisterHotKeyW, UnregisterHotKeyW, MSG, 
+    PostQuitMessage, RegisterClassW, MSG, 
     WNDCLASSW, WM_HOTKEY, WM_DESTROY, WS_OVERLAPPED,
 };
 
@@ -184,10 +185,10 @@ impl HotkeyManager {
         
         // Register with Win32
         let result = unsafe {
-            RegisterHotKeyW(hwnd, id as i32, modifier_mask, key as u32)
+            RegisterHotKey(hwnd, id as i32, HOT_KEY_MODIFIERS(modifier_mask), key as u32)
         };
         
-        if result.as_bool() {
+        if result.is_ok() {
             // Store callback
             let mut hotkeys = self.hotkeys.lock()
                 .map_err(|_| HotkeyError::HotkeyRegistrationFailed("Callback storage failed".to_string()))?;
@@ -212,10 +213,10 @@ impl HotkeyManager {
         
         // Unregister with Win32
         let result = unsafe {
-            UnregisterHotKeyW(hwnd, id as i32)
+            UnregisterHotKey(hwnd, id as i32)
         };
         
-        if result.as_bool() {
+        if result.is_ok() {
             // Remove callback
             let mut hotkeys = self.hotkeys.lock()
                 .map_err(|_| HotkeyError::HotkeyUnregistrationFailed { id })?;
@@ -286,7 +287,7 @@ impl HotkeyManager {
     fn create_message_window(
         hotkeys: &Arc<Mutex<HashMap<u32, HotkeyCallback>>>,
     ) -> Result<HWND, HotkeyError> {
-        let class_name = windows::w!("TactileWinHotkeyWindow");
+        let class_name = w!("TactileWinHotkeyWindow");
         
         // Window procedure for handling messages
         unsafe extern "system" fn window_proc(
@@ -307,10 +308,12 @@ impl HotkeyManager {
                     LRESULT(0)
                 }
                 WM_DESTROY => {
-                    PostQuitMessage(0);
+                    unsafe {
+                        PostQuitMessage(0);
+                    }
                     LRESULT(0)
                 }
-                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
             }
         }
         
@@ -334,7 +337,7 @@ impl HotkeyManager {
             CreateWindowExW(
                 Default::default(),
                 class_name,
-                windows::w!(""),
+                w!(""),
                 WS_OVERLAPPED,
                 0, 0, 0, 0,
                 None, // HWND_MESSAGE would be ideal but isn't easily available

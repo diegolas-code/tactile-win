@@ -105,6 +105,11 @@ pub enum NavigationDirection {
 pub struct StateMachine;
 
 impl StateMachine {
+    /// Create a new state machine instance
+    pub fn new() -> Self {
+        Self
+    }
+    
     /// Processes a state event and returns the new state
     /// 
     /// # Arguments

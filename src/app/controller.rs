@@ -4,7 +4,8 @@
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
 use std::sync::{Arc, Mutex};
-use crate::app::state::{AppState, StateEvent, StateMachine};
+use crate::app::state::{AppState, StateEvent, StateMachine, NavigationDirection};
+use crate::input::{HotkeyManager, HotkeyError, HotkeyModifier, VirtualKey};
 use crate::platform::monitors::{enumerate_monitors, Monitor, MonitorError};
 use crate::domain::grid::Grid;
 
@@ -17,11 +18,19 @@ pub enum AppError {
     GridCreationFailed(String),
     /// No suitable monitors found for grid positioning
     NoSuitableMonitors,
+    /// Hotkey management failed
+    HotkeyError(HotkeyError),
 }
 
 impl From<MonitorError> for AppError {
     fn from(err: MonitorError) -> Self {
         AppError::MonitorError(err)
+    }
+}
+
+impl From<HotkeyError> for AppError {
+    fn from(err: HotkeyError) -> Self {
+        AppError::HotkeyError(err)
     }
 }
 
@@ -31,31 +40,65 @@ impl std::fmt::Display for AppError {
             AppError::MonitorError(e) => write!(f, "Monitor error: {:?}", e),
             AppError::GridCreationFailed(msg) => write!(f, "Grid creation failed: {}", msg),
             AppError::NoSuitableMonitors => write!(f, "No suitable monitors for grid positioning"),
+            AppError::HotkeyError(e) => write!(f, "Hotkey error: {:?}", e),
         }
     }
 }
 
 impl std::error::Error for AppError {}
 
-/// RAII wrapper for hotkey management (placeholder for now)
+/// RAII wrapper for global hotkey management
 /// 
-/// This will be implemented in Milestone 2: Global Hotkey
+/// Automatically starts/stops the hotkey manager and manages hotkey registration.
+/// Provides thread-safe access to hotkey functionality.
 pub struct HotkeyManagerGuard {
-    // Will contain HotkeyManager in Milestone 2
-    _placeholder: (),
+    manager: HotkeyManager,
+    main_hotkey_id: Option<u32>,
 }
 
 impl HotkeyManagerGuard {
+    /// Create a new hotkey manager and register the main application hotkey
     pub fn new() -> Result<Self, AppError> {
-        // Placeholder implementation
-        Ok(Self { _placeholder: () })
+        let mut manager = HotkeyManager::new();
+        
+        // Start the message loop
+        manager.start()?;
+        
+        Ok(Self {
+            manager,
+            main_hotkey_id: None,
+        })
+    }
+    
+    /// Register the main application hotkey (Ctrl+Alt+Space by default)
+    pub fn register_main_hotkey<F>(&mut self, callback: F) -> Result<(), AppError>
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let hotkey_id = self.manager.register_hotkey(
+            &[HotkeyModifier::Control, HotkeyModifier::Alt],
+            VirtualKey::Space,
+            Arc::new(callback),
+        )?;
+        
+        self.main_hotkey_id = Some(hotkey_id);
+        Ok(())
+    }
+    
+    /// Check if the hotkey manager is running
+    pub fn is_running(&self) -> bool {
+        self.manager.is_running()
     }
 }
 
 impl Drop for HotkeyManagerGuard {
     fn drop(&mut self) {
-        // RAII cleanup will be implemented in Milestone 2
-        println!("HotkeyManagerGuard: Cleanup (placeholder)");
+        // Unregister main hotkey if registered
+        if let Some(id) = self.main_hotkey_id {
+            let _ = self.manager.unregister_hotkey(id);
+        }
+        
+        // Manager will be automatically stopped by its own Drop implementation
     }
 }
 
@@ -111,7 +154,7 @@ pub struct AppController {
     /// Current application state (thread-safe)
     state: Arc<Mutex<AppState>>,
     /// Hotkey management with guaranteed cleanup
-    _hotkey_manager: HotkeyManagerGuard,
+    hotkey_manager: HotkeyManagerGuard,
     /// Overlay management with guaranteed cleanup
     _overlay_manager: OverlayManagerGuard,
     /// Keyboard capture with guaranteed cleanup
@@ -156,16 +199,25 @@ impl AppController {
         }
 
         // Initialize RAII-wrapped components
-        let hotkey_manager = HotkeyManagerGuard::new()?;
+        let mut hotkey_manager = HotkeyManagerGuard::new()?;
         let overlay_manager = OverlayManagerGuard::new()?;
         let keyboard_capture = KeyboardCaptureGuard::new()?;
 
         // Initialize with idle state
         let state = Arc::new(Mutex::new(AppState::default()));
+        let state_for_callback = Arc::clone(&state);
+
+        // Register main application hotkey
+        hotkey_manager.register_main_hotkey(move || {
+            // Create hotkey event and process it through state machine
+            let mut state_guard = state_for_callback.lock().unwrap();
+            let current_state = state_guard.clone();
+            *state_guard = StateMachine::process_event(current_state, StateEvent::HotkeyPressed, 1);
+        })?;
 
         Ok(Self {
             state,
-            _hotkey_manager: hotkey_manager,
+            hotkey_manager,
             _overlay_manager: overlay_manager,
             _keyboard_capture: keyboard_capture,
             monitors,
