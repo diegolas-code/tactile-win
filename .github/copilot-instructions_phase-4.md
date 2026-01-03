@@ -157,7 +157,6 @@ After Phase 3 completion:
 - Add `cross_monitor_policy` field for policy enforcement
 - Add events for monitor layout changes and navigation
 - Handle monitor hot-plug during active selection
-```
 
 #### Controller Integration
 **File**: `src/app/controller.rs` (extend existing)
@@ -264,9 +263,6 @@ After Phase 3 completion:
 - Behavior settings (timeout, cross-monitor policy)
 
 **Features**: Versioning, validation, default fallbacks
-
-
-```
 
 #### Task 3.2: Configuration Persistence
 **File**: `src/config/storage.rs` (new)
