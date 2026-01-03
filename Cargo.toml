@@ -8,5 +8,7 @@ windows = { version = "0.52", features = [
     "Win32_UI_HiDpi",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
-    "Win32_Foundation"
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader"
 ] }
+thiserror = "1.0"

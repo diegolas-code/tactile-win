@@ -127,7 +127,7 @@ impl StateMachine {
             },
             
             // From Selecting state  
-            (AppState::Selecting(mut selecting), StateEvent::KeyPressed(key)) => {
+            (AppState::Selecting(selecting), StateEvent::KeyPressed(_key)) => {
                 // Process key press in selection
                 // Note: Grid validation will happen in controller
                 AppState::Selecting(selecting)
