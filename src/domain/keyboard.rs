@@ -55,6 +55,7 @@ impl GridCoords {
 /// 
 /// Maps keyboard keys to grid coordinates following QWERTY layout pattern.
 /// Supports multiple grid sizes while maintaining consistent key mapping.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QwertyLayout {
     cols: u32,
     rows: u32,
