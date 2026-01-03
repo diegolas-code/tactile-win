@@ -4,3 +4,4 @@
 //! of Win32 APIs and platform-specific implementations.
 
 pub mod core;
+pub mod keyboard;
