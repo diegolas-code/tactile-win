@@ -11,7 +11,7 @@
 //! - **API clarity**: Always returns (row, col) coordinates, never flat indices
 
 /// Error types for keyboard layout operations
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyboardError {
     /// Invalid key that's not in the current layout
     InvalidKey(char),
