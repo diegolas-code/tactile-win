@@ -9,6 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 mod domain;
 mod platform;
+mod app;
 
 use domain::core::Rect;
 use domain::keyboard::{QwertyLayout, GridCoords};
