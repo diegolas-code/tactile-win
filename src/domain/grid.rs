@@ -137,6 +137,32 @@ impl Grid {
         &self.keyboard_layout
     }
 
+    /// Gets the keyboard key for grid coordinates
+    /// 
+    /// # Arguments
+    /// * `coords` - Grid coordinates (row, col)
+    /// 
+    /// # Returns
+    /// The keyboard key character for the specified coordinates
+    pub fn key_for_coords(&self, coords: GridCoords) -> Result<char, GridError> {
+        // Validate coordinates are within grid bounds
+        if !self.contains_coords(coords) {
+            return Err(GridError::InvalidCoordinates {
+                coords,
+                max_row: self.rows - 1,
+                max_col: self.cols - 1,
+            });
+        }
+
+        // Use the keyboard layout to find the key
+        self.keyboard_layout.coords_to_key(coords)
+            .map_err(|_| GridError::InvalidCoordinates {
+                coords,
+                max_row: self.rows - 1,
+                max_col: self.cols - 1,
+            })
+    }
+
     /// Converts grid coordinates to screen rectangle
     /// 
     /// # Arguments

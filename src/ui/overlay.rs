@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM, COLORREF};
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush};
+use windows::Win32::Graphics::Gdi::{GetDC, ReleaseDC, InvalidateRect, CreateSolidBrush, CreateCompatibleDC, CreateDIBSection, SelectObject, BitBlt, DeleteDC, DeleteObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY, BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, SetLayeredWindowAttributes,
@@ -19,7 +19,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::domain::core::Rect;
+use crate::domain::grid::Grid;
 use crate::platform::monitors::Monitor;
+use crate::ui::renderer::{GridRenderer, GridLayout, RendererError};
 
 /// Overlay management errors
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +37,9 @@ pub enum OverlayError {
     
     #[error("Overlay manager not initialized")]
     NotInitialized,
+    
+    #[error("Rendering failed: {0}")]
+    RenderingError(#[from] RendererError),
 }
 
 /// Overlay window for a single monitor
@@ -49,13 +54,28 @@ pub struct OverlayWindow {
     /// Monitor bounds for positioning
     pub monitor_rect: Rect,
     
+    /// Grid for this monitor
+    pub grid: Grid,
+    
+    /// DPI scale for this monitor
+    pub dpi_scale: f32,
+    
     /// Current visibility state
     pub visible: bool,
+    
+    /// Whether this overlay is the active monitor (shows letters)
+    pub is_active: bool,
+    
+    /// Cached rendered content
+    cached_pixmap: Option<tiny_skia::Pixmap>,
+    
+    /// Grid renderer
+    renderer: GridRenderer,
 }
 
 impl OverlayWindow {
     /// Create a new overlay window for the specified monitor
-    fn new(monitor_index: usize, monitor: &Monitor) -> Result<Self, OverlayError> {
+    fn new(monitor_index: usize, monitor: &Monitor, grid: Grid) -> Result<Self, OverlayError> {
         let class_name = w!("TactileWinOverlayWindow");
         
         // Register window class if needed
@@ -71,7 +91,12 @@ impl OverlayWindow {
             hwnd,
             monitor_index,
             monitor_rect: monitor.work_area,
+            grid,
+            dpi_scale: monitor.dpi_scale,
             visible: false,
+            is_active: false,
+            cached_pixmap: None,
+            renderer: GridRenderer::new(),
         })
     }
     
@@ -86,12 +111,16 @@ impl OverlayWindow {
         ) -> LRESULT {
             match msg {
                 WM_PAINT => {
-                    // Painting will be handled by the rendering system in Milestone 4
-                    // For now, just validate the paint region
+                    // Basic paint handling - grid content rendering happens in render_grid()
+                    // In a full implementation, we would blit the cached pixmap to the window DC here
                     unsafe {
                         use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
                         let mut ps = PAINTSTRUCT::default();
                         let _hdc = BeginPaint(hwnd, &mut ps);
+                        
+                        // TODO: Blit cached pixmap to window DC
+                        // For Phase 3, we just validate the paint region
+                        
                         EndPaint(hwnd, &ps);
                     }
                     LRESULT(0)
@@ -200,6 +229,50 @@ impl OverlayWindow {
     pub fn is_visible(&self) -> bool {
         self.visible
     }
+    
+    /// Set whether this overlay is the active monitor
+    pub fn set_active(&mut self, active: bool) {
+        if self.is_active != active {
+            self.is_active = active;
+            self.invalidate_cache();
+        }
+    }
+    
+    /// Check if this overlay is the active monitor
+    pub fn is_active(&self) -> bool {
+        self.is_active
+    }
+    
+    /// Invalidate cached rendering content
+    fn invalidate_cache(&mut self) {
+        self.cached_pixmap = None;
+        // Trigger window repaint
+        unsafe {
+            InvalidateRect(self.hwnd, None, true);
+        }
+    }
+    
+    /// Render the grid content
+    pub fn render_grid(&mut self) -> Result<(), OverlayError> {
+        // Create grid layout
+        let layout = GridLayout::from_grid(&self.grid, self.monitor_rect, self.is_active, self.dpi_scale);
+        
+        // Render to pixmap
+        let pixmap = self.renderer.render_layout(&layout)?;
+        
+        // Cache the result
+        self.cached_pixmap = Some(pixmap);
+        
+        // Trigger window update
+        self.invalidate_cache();
+        
+        Ok(())
+    }
+    
+    /// Get the cached pixmap for display
+    pub fn get_cached_pixmap(&self) -> Option<&tiny_skia::Pixmap> {
+        self.cached_pixmap.as_ref()
+    }
 }
 
 impl Drop for OverlayWindow {
@@ -229,16 +302,20 @@ impl OverlayManager {
         }
     }
     
-    /// Initialize overlay windows for all provided monitors
-    pub fn initialize(&mut self, monitors: &[Monitor]) -> Result<(), OverlayError> {
+    /// Initialize overlay windows for all provided monitors with their grids
+    pub fn initialize(&mut self, monitors: &[Monitor], grids: &[Grid]) -> Result<(), OverlayError> {
+        if monitors.len() != grids.len() {
+            return Err(OverlayError::NotInitialized);
+        }
+        
         let mut overlays = self.overlays.lock().unwrap();
         
         // Clear any existing overlays
         overlays.clear();
         
-        // Create overlay for each monitor
-        for (index, monitor) in monitors.iter().enumerate() {
-            let overlay = OverlayWindow::new(index, monitor)?;
+        // Create overlay for each monitor with its corresponding grid
+        for (index, (monitor, grid)) in monitors.iter().zip(grids.iter()).enumerate() {
+            let overlay = OverlayWindow::new(index, monitor, grid.clone())?;
             overlays.insert(index, overlay);
         }
         
@@ -248,6 +325,14 @@ impl OverlayManager {
     /// Show overlays on all monitors
     pub fn show_all(&mut self) {
         if !self.visible {
+            // Set first monitor as active by default
+            if self.overlay_count() > 0 {
+                self.set_active_monitor(0);
+            }
+            
+            // Render grid content
+            self.render_all_grids();
+            
             let mut overlays = self.overlays.lock().unwrap();
             for overlay in overlays.values_mut() {
                 overlay.show();
@@ -291,6 +376,45 @@ impl OverlayManager {
     /// Get the number of overlay windows
     pub fn overlay_count(&self) -> usize {
         self.overlays.lock().unwrap().len()
+    }
+    
+    /// Set which monitor is active (shows letters)
+    pub fn set_active_monitor(&mut self, monitor_index: usize) {
+        {
+            let mut overlays = self.overlays.lock().unwrap();
+            
+            // Set all monitors as inactive first
+            for overlay in overlays.values_mut() {
+                overlay.set_active(false);
+            }
+            
+            // Set the specified monitor as active
+            if let Some(overlay) = overlays.get_mut(&monitor_index) {
+                overlay.set_active(true);
+            }
+        } // Release the mutex lock here
+        
+        // Trigger re-rendering for all overlays
+        self.render_all_grids();
+    }
+    
+    /// Get the currently active monitor index
+    pub fn get_active_monitor(&self) -> Option<usize> {
+        let overlays = self.overlays.lock().unwrap();
+        for (index, overlay) in overlays.iter() {
+            if overlay.is_active() {
+                return Some(*index);
+            }
+        }
+        None
+    }
+    
+    /// Render grid content for all overlays
+    pub fn render_all_grids(&mut self) {
+        let mut overlays = self.overlays.lock().unwrap();
+        for overlay in overlays.values_mut() {
+            let _ = overlay.render_grid(); // Ignore rendering errors for now
+        }
     }
     
     /// Get overlay window handle for a specific monitor
@@ -349,8 +473,12 @@ mod tests {
             },
         ];
         
+        // Create a simple grid for testing
+        let grid = Grid::new(3, 2, Rect::new(0, 0, 1920, 1080)).unwrap();
+        let grids = [grid];
+        
         // Initialize should work
-        let result = manager.initialize(&monitors);
+        let result = manager.initialize(&monitors, &grids);
         
         // In test environment, window creation might fail, but the API should be correct
         match result {

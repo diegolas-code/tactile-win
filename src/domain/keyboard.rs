@@ -181,6 +181,37 @@ impl QwertyLayout {
     pub fn dimensions(&self) -> (u32, u32) {
         (self.cols, self.rows)
     }
+
+    /// Converts grid coordinates to the corresponding keyboard key
+    /// 
+    /// # Arguments
+    /// * `coords` - Grid coordinates (row, col)
+    /// 
+    /// # Returns
+    /// The keyboard key for the specified coordinates
+    pub fn coords_to_key(&self, coords: GridCoords) -> Result<char, KeyboardError> {
+        // Validate coordinates are within layout bounds
+        if coords.row >= self.rows || coords.col >= self.cols {
+            return Err(KeyboardError::InvalidKey('\0'));
+        }
+
+        // Define the keyboard layout mapping - row-major order
+        let layout = [
+            // Row 0 
+            ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+            // Row 1
+            ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', '\0'],
+            // Row 2
+            ['Z', 'X', 'C', 'V', 'B', 'N', 'M', '\0', '\0', '\0'],
+        ];
+
+        layout
+            .get(coords.row as usize)
+            .and_then(|row| row.get(coords.col as usize))
+            .filter(|&&key| key != '\0')
+            .map(|&key| key)
+            .ok_or(KeyboardError::InvalidKey('\0'))
+    }
 }
 
 #[cfg(test)]

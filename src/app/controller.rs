@@ -121,12 +121,12 @@ pub struct OverlayManagerGuard {
 }
 
 impl OverlayManagerGuard {
-    /// Create a new overlay manager and initialize with monitors
-    pub fn new(monitors: &[Monitor]) -> Result<Self, AppError> {
+    /// Create a new overlay manager and initialize with monitors and grids
+    pub fn new(monitors: &[Monitor], grids: &[Grid]) -> Result<Self, AppError> {
         let mut manager = OverlayManager::new();
         
-        // Initialize overlay windows for all monitors
-        manager.initialize(monitors)?;
+        // Initialize overlay windows for all monitors with their grids
+        manager.initialize(monitors, grids)?;
         
         Ok(Self { manager })
     }
@@ -154,6 +154,21 @@ impl OverlayManagerGuard {
     /// Get overlay count
     pub fn overlay_count(&self) -> usize {
         self.manager.overlay_count()
+    }
+    
+    /// Set which monitor is active (shows letters)
+    pub fn set_active_monitor(&mut self, monitor_index: usize) {
+        self.manager.set_active_monitor(monitor_index);
+    }
+    
+    /// Get the currently active monitor
+    pub fn get_active_monitor(&self) -> Option<usize> {
+        self.manager.get_active_monitor()
+    }
+    
+    /// Render grid content for all overlays
+    pub fn render_grids(&mut self) {
+        self.manager.render_all_grids();
     }
 }
 
@@ -240,7 +255,7 @@ impl AppController {
 
         // Initialize RAII-wrapped components
         let mut hotkey_manager = HotkeyManagerGuard::new()?;
-        let overlay_manager = OverlayManagerGuard::new(&monitors)?;
+        let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
         let keyboard_capture = KeyboardCaptureGuard::new()?;
 
         // Initialize with idle state
