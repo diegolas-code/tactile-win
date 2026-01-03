@@ -112,7 +112,6 @@ After Phase 3 completion:
 - Handle monitor arrangement changes gracefully
 
 **Integration**: Extends existing monitor enumeration with stable ID support
-```
 
 #### Task 1.3: Simple Cross-Monitor Selection
 **File**: `src/domain/cross_monitor.rs` (new)
@@ -129,9 +128,6 @@ After Phase 3 completion:
 
 **UX Constraint**: Clear error feedback when invalid cross-monitor selections attempted
 
-
-```
-
 #### Task 1.4: Simple Monitor Navigation
 **File**: `src/input/navigation.rs` (new)
 
@@ -145,7 +141,6 @@ After Phase 3 completion:
 **Constraints**: Only horizontal movement between adjacent monitors
 
 **Integration**: Works with existing keyboard capture system
-```
 
 ### Integration Points
 
@@ -166,7 +161,6 @@ After Phase 3 completion:
 - Apply cross-monitor selections with policy validation
 - Respond to monitor configuration changes
 - Update overlays when active monitor changes
-```
 
 ### Testing Strategy
 
