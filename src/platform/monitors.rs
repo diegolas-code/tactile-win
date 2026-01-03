@@ -247,8 +247,8 @@ mod tests {
             is_primary: true,
         };
         
-        // Should be rejected if minimum height is 600
-        assert!(!small_monitor.should_reject(600));
+        // Should be rejected if minimum height is 600 (work_area.h = 560 < 600)
+        assert!(small_monitor.should_reject(600));
         assert!(small_monitor.should_reject(700));
     }
 }

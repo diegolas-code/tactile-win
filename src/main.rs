@@ -110,6 +110,7 @@ fn run_phase1_validation() -> Result<(), Box<dyn std::error::Error>> {
                 window_info.rect.x, window_info.rect.y
             );
             println!("   Resizable: {}", window_info.is_resizable);
+            println!("   Maximized: {}", window_info.is_maximized);
             println!("   Suitable for positioning: {}", 
                 window::is_window_suitable_for_positioning(window_info.handle));
         }
@@ -145,6 +146,9 @@ fn demo_window_positioning() -> Result<(), Box<dyn std::error::Error>> {
     );
     
     println!("Positioning window to left half of primary monitor...");
+    if window_info.is_maximized {
+        println!("Window is maximized - will restore first, then position");
+    }
     println!("Target rectangle: {}x{} at ({}, {})", 
         target_rect.w, target_rect.h, target_rect.x, target_rect.y);
     

@@ -54,6 +54,8 @@ pub struct WindowInfo {
     pub is_resizable: bool,
     /// Whether this is a child window
     pub is_child: bool,
+    /// Whether the window is currently maximized
+    pub is_maximized: bool,
 }
 
 /// Gets the currently active (foreground) window
@@ -105,12 +107,25 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo, WindowError> {
         // Check if it's a child window
         let is_child = (style & WS_CHILD) != WINDOW_STYLE(0);
         
+        // Check if window is maximized
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        
+        let is_maximized = if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+            placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
+        } else {
+            false
+        };
+        
         Ok(WindowInfo {
             handle: hwnd,
             title,
             rect,
             is_resizable,
             is_child,
+            is_maximized,
         })
     }
 }
@@ -132,6 +147,16 @@ pub fn position_window(hwnd: HWND, target_rect: Rect) -> Result<(), WindowError>
         let window_info = get_window_info(hwnd)?;
         if !window_info.is_resizable {
             return Err(WindowError::NotResizable(hwnd));
+        }
+        
+        // If window is maximized, restore it first
+        if window_info.is_maximized {
+            if ShowWindow(hwnd, SW_RESTORE).as_bool() == false {
+                return Err(WindowError::PositionFailed(hwnd));
+            }
+            
+            // Give the window time to restore (avoid race conditions)
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
         
         // Position the window
