@@ -1,12 +1,3 @@
----
-papersize: legal
-geometry: margin=1.5cm
-fontsize: 12pt
-output: pdf_document
-header-includes:
- - \pagenumbering{gobble}
----
-
 # Copilot Instructions for `tactile-win`
 
 This document serves as comprehensive context for AI development assistants working on the `tactile-win` project, consolidating architecture and functional specifications.

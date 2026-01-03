@@ -1,23 +1,17 @@
----
-papersize: legal
-geometry: margin=1.5cm
-fontsize: 12pt
-output: pdf_document
-header-includes:
- - \pagenumbering{gobble}
----
-
-# Phase 4: Advanced Features & Cross-Monitor Support
+# Phase 4A: Advanced Core Features
 
 **Status**: Phase 3 Complete ✓  
 **Prerequisite**: Working single-monitor MVP with keyboard capture and window positioning  
-**Goal**: Advanced window management features and cross-monitor functionality
+**Goal**: Advanced window management with multi-monitor support and user configuration
+**Follow-up**: Phase 4B for professional polish and production readiness
 
 ---
 
-## Phase 4 Overview
+## Phase 4A Overview
 
-Phase 4 transforms the single-monitor MVP into a comprehensive window management solution with advanced features, cross-monitor support, persistent configuration, and professional user experience enhancements.
+Phase 4A builds the advanced core functionality on top of the single-monitor MVP. This phase focuses on the technical challenges of multi-monitor support, enhanced selection logic, and persistent user configuration.
+
+**Phase Split Rationale**: The original Phase 4 scope was substantial (10-16 days). Splitting into 4A (core features) and 4B (polish) creates a natural break point and allows shipping a fully functional advanced tool after 4A completion.
 
 ### Current Implementation Status
 
@@ -29,13 +23,17 @@ After Phase 3 completion:
 - ✅ DPI-aware coordinate handling
 - ✅ RAII resource management throughout
 
-### Phase 4 Objectives
+### Phase 4A Objectives
 
 1. **Multi-Monitor Window Management**: Enable window positioning across multiple physical monitors within the main desktop
-2. **Persistent Configuration**: User-customizable grids, hotkeys, and preferences with registry/file storage
-3. **Enhanced User Experience**: System tray integration, on-screen help, visual feedback improvements
-4. **Production Polish**: Comprehensive error handling, logging, portable distribution
-5. **Simple Cross-Monitor Features**: Basic window movement between adjacent monitors only
+2. **Enhanced Selection Logic**: Advanced selection modes with window constraints and history
+3. **Persistent Configuration**: User-customizable grids, hotkeys, and preferences with registry/file storage
+
+**Out of Scope for 4A** (deferred to Phase 4B):
+- System tray integration
+- Help system and tutorials
+- Visual polish and animations
+- Production distribution and installers
 
 ---
 
@@ -53,17 +51,13 @@ After Phase 3 completion:
 **Estimated Effort**: 2-3 days  
 **Focus**: User settings storage and customization interface
 
-### Milestone 4: Enhanced User Experience (Low-Medium Complexity)
-**Estimated Effort**: 2-3 days  
-**Focus**: System tray, help system, visual polish
+**Total Phase 4A Effort**: 6-9 days
 
-### Milestone 5: Production Readiness (Low Complexity)
-**Estimated Effort**: 1-2 days  
-**Focus**: Installer, auto-start, final testing
+**Phase 4B Preview**: System tray, help system, visual polish, and production distribution (4-7 days)
 
 ---
 
-## Milestone 1: Cross-Monitor Foundation
+## Milestone 1: Multi-Monitor Support
 
 ### Technical Challenges
 
@@ -314,160 +308,20 @@ After Phase 3 completion:
 
 ---
 
-## Milestone 4: Enhanced User Experience
+## Phase 4A Completion
 
-### System Integration Features
+### Deliverables
 
-#### System Tray Integration  
-- Persistent system tray icon with context menu
-- Quick enable/disable toggle
-- Recent selections access
-- Configuration shortcut
+After Phase 4A completion, the application will have:
+- ✅ Multi-monitor window positioning with stable monitor identification
+- ✅ Advanced selection modes with window constraints
+- ✅ Persistent user configuration with runtime updates
+- ✅ Enhanced keyboard handling for multi-monitor navigation
+- ✅ Selection history tracking
 
-#### On-Screen Help System
-- Overlay help during selection mode
-- Keyboard shortcut reference
-- Tutorial mode for first-time users
+### Architecture Impact
 
-#### Visual Polish
-- Smooth animations for overlay transitions
-- High-contrast mode support
-- Custom color schemes
-- Selection preview
-
-### Implementation Tasks
-
-#### Task 4.1: System Tray Integration
-**File**: `src/ui/system_tray.rs` (new)
-
-**Purpose**: Persistent system tray presence with quick access menu
-
-**Features**:
-- System tray icon with context menu
-- Quick enable/disable toggle
-- Access to configuration
-- Application exit option
-- Status indication (enabled/disabled)
-
-#### Task 4.2: Help System
-**File**: `src/ui/help_overlay.rs` (new)
-
-**Purpose**: On-screen help and tutorials for new users
-
-**Help Types**:
-- Quick keyboard reference overlay
-- First-time user tutorial
-- Context-sensitive tips
-
-**Display**: Overlay help content on grid during selection mode
-
-#### Task 4.3: Visual Improvements
-**File**: `src/ui/visual_effects.rs` (new)
-
-**Purpose**: Basic visual polish and accessibility improvements
-
-**Improvements**:
-- High-contrast mode support
-- Customizable color schemes
-- Selection preview effects
-- Smooth overlay transitions
-
-**Scope**: Keep animations simple - focus on usability over complexity
-
-#### Task 4.4: Error Handling & User Feedback
-**File**: `src/app/user_feedback.rs` (new)
-
-**Purpose**: Comprehensive error handling with user-friendly feedback
-
-**Features**:
-- Clear error messages for failed operations
-- Status notifications for successful actions
-- Graceful degradation on system errors
-- Diagnostic logging for troubleshooting
-
-**Priority**: Focus on cross-monitor selection errors and configuration issues
-
----
-
-## Milestone 5: Production Readiness
-
-### Release Preparation
-
-#### Installer Package
-- Windows MSI installer with proper registration
-- Auto-start configuration option
-- Uninstaller with complete cleanup
-
-#### Quality Assurance  
-- Comprehensive test suite including integration tests
-- Performance benchmarks and optimization
-- Memory leak detection and resource cleanup validation
-
-#### Documentation & Distribution
-- User manual and troubleshooting guide
-- GitHub releases with changelog
-- Code signing for security
-
-### Implementation Tasks
-
-#### Task 5.1: Portable Distribution
-**File**: `scripts/create_portable.ps1` (new)
-
-**Purpose**: Create simple portable distribution package for Phase 4
-
-**Package Contents**:
-- Release executable
-- Documentation files (README, LICENSE)
-- Optional auto-start batch file
-- Zip package for distribution
-
-**Approach**: Keep simple - MSI installer deferred to later phase
-
-#### Task 5.2: Integration Testing
-**File**: `tests/integration/` (new)
-
-**Purpose**: Validate complete Phase 4 workflows
-
-**Test Scenarios**:
-- Complete selection workflow from hotkey to window positioning
-- Multi-monitor configuration handling
-- Configuration persistence across restarts
-- Resource cleanup verification
-
-**Focus**: End-to-end user scenarios rather than unit test details
-
-#### Task 5.3: Release Validation
-**File**: `src/app/release_validation.rs` (new)
-
-**Purpose**: Basic validation before release
-
-**Validation Areas**:
-- System compatibility checks
-- Resource lifecycle verification
-- Configuration system validation
-- Core functionality smoke tests
-
-**Keep Simple**: No complex performance monitoring - focus on correctness
-
-#### Task 5.4: Build Automation
-**File**: `.github/workflows/release.yml` (new)
-
-**Purpose**: Automated build and release process
-
-**Workflow Steps**:
-- Trigger on version tags
-- Build release binary
-- Create portable package
-- Upload artifacts
-- Create GitHub release
-
-**Keep Simple**: No code signing or complex MSI building in Phase 4
-
----
-
-## Architecture Integration
-
-### Module Structure Changes
+Phase 4A adds significant architectural components:
 
 ```
 src/
@@ -488,19 +342,19 @@ src/
 │   ├── essential_keyboard.rs # NEW: Essential keyboard handling only
 │   ├── navigation.rs         # NEW: Simple monitor navigation (left/right)
 │   └── ...existing files...
-├── ui/
-│   ├── system_tray.rs        # NEW: System tray integration
-│   ├── help_overlay.rs       # NEW: Help system
-│   ├── visual_effects.rs     # NEW: Basic visual improvements
-│   └── ...existing files...
 ├── app/
 │   ├── config_integration.rs # NEW: Config-app integration
-│   ├── user_feedback.rs      # NEW: Error handling & feedback
-│   ├── release_validation.rs # NEW: Basic release checks
 │   └── ...existing files...
-└── scripts/                   # NEW: Build and distribution scripts
-    └── create_portable.ps1
+└── tests/
+    └── integration/           # NEW: Integration tests for Phase 4A features
 ```
+
+**Deferred to Phase 4B**:
+- `src/ui/system_tray.rs`
+- `src/ui/help_overlay.rs` 
+- `src/ui/visual_effects.rs`
+- `src/app/user_feedback.rs`
+- `scripts/create_portable.ps1`
 
 ### Dependency Updates
 
@@ -529,33 +383,24 @@ src/
 
 ---
 
-## Testing Strategy for Phase 4
+## Testing Strategy for Phase 4A
 
 ### Unit Tests (Per Milestone)
-- **Milestone 1**: Virtual coordinate conversion, monitor arrangement detection
+- **Milestone 1**: Monitor coordinate conversion, stable MonitorId generation
 - **Milestone 2**: Selection constraint application, history management  
 - **Milestone 3**: Configuration serialization, storage round-trips
-- **Milestone 4**: Visual effect calculations, tray menu logic
-- **Milestone 5**: Performance benchmarks, resource cleanup
 
 ### Integration Tests
 - Cross-monitor selection workflows
 - Configuration persistence across restarts
-- System tray interaction scenarios
-- Help system navigation
 - Multi-monitor hot-plug handling
+- Selection history across monitor changes
 
 ### Performance Tests  
-- Overlay rendering latency (target: <16ms for 60fps)
-- Memory usage during extended operation (target: <50MB)
-- Startup time (target: <2 seconds)
-- Configuration load time (target: <100ms)
-
-### Accessibility Tests
-- High-contrast mode functionality
-- Screen reader compatibility (where applicable)
-- Keyboard-only navigation
-- Large DPI scaling (200%+) support
+- Multi-monitor overlay rendering latency
+- Configuration load/save performance
+- Memory usage with multiple monitors
+- Startup time with saved configuration
 
 ---
 
@@ -618,49 +463,45 @@ src/
 
 ## Success Criteria
 
-### Functional Requirements
-- ✅ Cross-monitor window positioning works correctly
-- ✅ Configuration persists across application restarts  
-- ✅ System tray integration provides quick access to features
-- ✅ Help system enables new users to learn the application
-- ✅ Application installs and uninstalls cleanly
+### Functional Requirements (Phase 4A)
+- ✅ Multi-monitor window positioning works correctly with stable MonitorId
+- ✅ Configuration persists across application restarts and monitor changes
+- ✅ Advanced selection modes (constraints, history) function properly  
+- ✅ Cross-monitor selection limited to adjacent horizontal monitors
+- ✅ Essential keyboard navigation works between monitors
 
-### Performance Requirements  
-- ✅ Overlay display latency < 100ms on modern hardware
-- ✅ Memory usage remains stable during extended operation
-- ✅ Application startup time < 3 seconds
-- ✅ No detectable impact on system performance when idle
+### Performance Requirements
+- ✅ Multi-monitor overlay display latency < 150ms
+- ✅ Configuration load time < 200ms
+- ✅ Memory usage remains stable with multiple monitors
+- ✅ No performance degradation with saved configuration
 
 ### Quality Requirements
-- ✅ Comprehensive test coverage (>80% for new Phase 4 code)
-- ✅ No memory leaks detected in 24-hour stress testing
-- ✅ Graceful error handling with user-friendly feedback
-- ✅ Professional installer with proper Windows integration
+- ✅ Comprehensive test coverage (>80% for new Phase 4A code)
+- ✅ Graceful handling of monitor hot-plug events
+- ✅ Configuration corruption handled with automatic fallbacks
+- ✅ Clear error messages for cross-monitor constraint violations
 
 ---
 
 ## Implementation Timeline
 
-### Week 1: Foundation
-- **Days 1-2**: Virtual desktop coordinate system
-- **Days 3-4**: Cross-monitor selection logic
-- **Day 5**: Integration and initial testing
+### Week 1: Multi-Monitor Foundation (Days 1-3)
+- **Days 1-2**: Stable MonitorId system and multi-monitor coordinate handling
+- **Day 3**: Cross-monitor selection logic and validation
 
-### Week 2: Advanced Features  
-- **Days 1-2**: Advanced selection modes and constraints
-- **Days 3-4**: Configuration system implementation
-- **Day 5**: Configuration integration and testing
+### Week 2: Advanced Features (Days 4-6)
+- **Days 4-5**: Window constraints and selection history
+- **Day 6**: Essential keyboard handling enhancements
 
-### Week 3: User Experience
-- **Days 1-2**: System tray and help system
-- **Days 3-4**: Visual effects and polish
-- **Day 5**: User experience testing and refinement
+### Week 3: Configuration System (Days 7-9)
+- **Days 7-8**: Configuration schema, storage, and management
+- **Day 9**: Runtime configuration updates and integration testing
 
-### Week 4: Production Ready
-- **Days 1-2**: Installer and distribution
-- **Days 3-4**: Performance optimization and testing  
-- **Day 5**: Final testing, documentation, release preparation
+**Total Phase 4A Duration**: 6-9 days
+
+**Phase 4B Preview**: System tray, help system, visual polish, and production distribution will follow as a separate phase
 
 ---
 
-This comprehensive Phase 4 plan transforms the tactile-win application from a functional MVP into a production-ready, professional window management solution with advanced features and excellent user experience.
+This Phase 4A plan builds the advanced core functionality needed to transform tactile-win from a single-monitor MVP into a sophisticated multi-monitor window management tool with persistent user configuration. Upon completion, users will have a fully functional advanced window manager, with professional polish and distribution features following in Phase 4B.
