@@ -198,10 +198,8 @@ The application divides screen(s) into NxM grids with the following characterist
 
 - **Default**: 3×2 grid per monitor
 - **Labeling**: QWERTY layout (Q,W,E,R,... = top row; A,S,D,F,... = second row)
-- **Constraints**: Minimum cell size 480×360 pixels (suggested for usability)
+- **Constraints**: Minimum cell size 480×360 pixels
 - **Independence**: Each monitor has its own grid
-- **Size Adaptation**: Reduce grid size within reasonable thresholds for smaller monitors
-- **Minimum Display**: Reject configuration for displays smaller than 600px height
 
 ### User Interaction Flow
 
@@ -211,9 +209,6 @@ The application divides screen(s) into NxM grids with the following characterist
 4. **Selection End**: User presses second key (e.g., S) - this defines the selection rectangle
 5. **Multi-cell**: Selection spans from start to end cell (e.g., Q→S = cells Q,W,A,S)
 6. **Multi-monitor**: Arrow keys navigate between screens before or during selection
-   - **Navigation**: Left/Right arrow keys move between horizontally arranged monitors
-   - **Visual Feedback**: Active monitor shows letter labels, inactive monitors show grid without letters
-   - **Mid-Selection**: Monitor switching allowed during selection process
 7. **Application**: Active window resized/repositioned to selected area
 8. **Exit**: Return to idle mode
 
@@ -223,10 +218,6 @@ The application divides screen(s) into NxM grids with the following characterist
 - **Cancel Options**: ESC key or global hotkey again cancels selection
 - **Single Cell**: Pressing same key twice selects single cell (e.g., Q→Q = cell Q only)
 - **Rectangle Formation**: Selection always forms rectangle from top-left to bottom-right of pressed keys
-- **Order Independence**: Same result regardless of which corner is pressed first (Q→S = S→Q)
-- **Invalid Input**: Invalid key combinations close overlay without effect
-- **Timeout**: Overlay closes automatically after 30 seconds of inactivity
-- **Window Compatibility**: Non-resizable windows (dialogs) cause overlay to close without effect
 
 ### Example Interaction
 
@@ -278,10 +269,6 @@ enum AppState {
 - QWERTY keyboard layout determines grid mapping
 - Overlay must preserve active window focus
 - All coordinates must be DPI-aware
-- No interaction with Windows Snap Layouts (independent operation)
-- Single desktop operation (no virtual desktop integration)
-- Letter labels must be prominent, clear, and high-contrast
-- No overlay animations (standard window resize animations only)
 
 ---
 
