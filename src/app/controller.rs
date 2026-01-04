@@ -670,8 +670,9 @@ impl AppController {
                 KeyEvent::Cancel => {
                     self.handle_cancellation();
                 }
-                KeyEvent::Invalid(_) => {
-                    // Invalid keys are ignored (silent)
+                KeyEvent::Invalid(vk_code) => {
+                    println!("Invalid key pressed (vk={}), cancelling selection", vk_code);
+                    self.handle_cancellation();
                 }
             }
         }

@@ -25,7 +25,7 @@ use platform::{ monitors, window };
 const DEFAULT_GRID_COLS: u32 = 3;
 const DEFAULT_GRID_ROWS: u32 = 2;
 const MIN_CELL_WIDTH: i32 = 480;
-const MIN_CELL_HEIGHT: i32 = 360;
+const MIN_CELL_HEIGHT: i32 = 350;
 const MIN_MONITOR_HEIGHT: i32 = 600;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

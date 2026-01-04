@@ -105,8 +105,8 @@ impl KeyEvent {
             // Cancel keys
             0x1b => Some(KeyEvent::Cancel), // VK_ESCAPE
 
-            // Invalid key - return None to pass through
-            _ => None,
+            // Any other key during selection mode - treat as invalid and cancel
+            _ => Some(KeyEvent::Invalid(vk_code)),
         }
     }
 }
