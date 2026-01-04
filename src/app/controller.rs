@@ -263,8 +263,6 @@ impl Drop for KeyboardCaptureManager {
 pub struct AppController {
     /// Current application state (thread-safe)
     state: Arc<Mutex<AppState>>,
-    /// Hotkey management with guaranteed cleanup
-    hotkey_manager: HotkeyManagerGuard,
     /// Overlay management with guaranteed cleanup
     overlay_manager: OverlayManagerGuard,
     /// Keyboard capture management
@@ -275,6 +273,8 @@ pub struct AppController {
     grids: Vec<Grid>,
     /// Main window handle for message processing
     main_window: HWND,
+    /// Hotkey ID for cleanup
+    hotkey_id: i32,
 }
 
 impl AppController {
@@ -331,15 +331,16 @@ impl AppController {
             }
         };
         
+        println!("AppController: Registering hotkey...");
         hotkey_manager.register_main_hotkey(
-            &[HotkeyModifier::Control, HotkeyModifier::Shift, HotkeyModifier::Windows],
-            VirtualKey::T,
+            &[],  // No modifiers - just F9
+            VirtualKey::F9,
             hotkey_callback,
         ).map_err(|e| {
             eprintln!("Failed to register hotkey: {}", e);
             e
         })?;
-        println!("AppController: Hotkey registered (Ctrl+Shift+Win+T)");
+        println!("AppController: Hotkey registered (F9)");
         
         let mut overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
         let keyboard_capture = KeyboardCaptureManager::new(main_window);
@@ -351,12 +352,12 @@ impl AppController {
 
         Ok(Self {
             state,
-            hotkey_manager,
             overlay_manager,
             keyboard_capture,
             monitors,
             grids,
             main_window,
+            hotkey_id: 1,
         })
     }
 
@@ -730,11 +731,10 @@ impl AppController {
         }
 
         println!("\n=== APPLICATION READY ===");
-        println!("Press Ctrl+Shift+Win+T to activate grid overlay");
+        println!("Press F9 to activate grid overlay");
         println!("========================\n");
 
         const WM_TACTILE_KEY_EVENT: u32 = 0x8000;
-        const WM_TACTILE_HOTKEY: u32 = WM_APP + 1; // Custom message for hotkey
 
         unsafe {
             let mut msg = MSG::default();
@@ -757,9 +757,9 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
-                    } else if msg.message == WM_TACTILE_HOTKEY {
-                        // Hotkey pressed - toggle state
-                        println!("Hotkey message received in main window");
+                    } else if msg.message == WM_HOTKEY {
+                        // Hotkey pressed (F9) - toggle state
+                        println!("F9 pressed! Toggling overlay...");
                         self.handle_hotkey();
                     } else if msg.message == WM_TACTILE_KEY_EVENT {
                         // Handle keyboard event from hook
@@ -784,6 +784,13 @@ impl AppController {
 impl Drop for AppController {
     fn drop(&mut self) {
         println!("AppController: Shutting down with RAII cleanup");
+        
+        // Unregister hotkey
+        unsafe {
+            use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
+            let _ = UnregisterHotKey(self.main_window, self.hotkey_id);
+        }
+        
         // RAII wrappers will automatically clean up their resources
     }
 }
