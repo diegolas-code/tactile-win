@@ -9,18 +9,11 @@
 
 use windows::{
     Win32::{
-        Foundation::{ HWND, LPARAM, LRESULT, WPARAM },
+        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            CallNextHookEx,
-            HHOOK,
-            KBDLLHOOKSTRUCT,
-            PostMessageW,
-            SetWindowsHookExW,
-            UnhookWindowsHookEx,
-            WH_KEYBOARD_LL,
-            WM_KEYDOWN,
-            WM_SYSKEYDOWN,
+            CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW,
+            UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
         },
     },
     core::PCWSTR,
@@ -99,7 +92,7 @@ impl KeyEvent {
             // Navigation keys
             0x25 => Some(KeyEvent::Navigation(NavigationDirection::Left)), // VK_LEFT
             0x27 => Some(KeyEvent::Navigation(NavigationDirection::Right)), // VK_RIGHT
-            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)), // VK_UP
+            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)),   // VK_UP
             0x28 => Some(KeyEvent::Navigation(NavigationDirection::Down)), // VK_DOWN
 
             // Cancel keys
@@ -156,16 +149,11 @@ impl KeyboardCapture {
             });
 
             // Install low-level keyboard hook
-            let hinstance = GetModuleHandleW(PCWSTR::null()).map_err(
-                |_| KeyboardCaptureError::HookInstallationFailed
-            )?;
+            let hinstance = GetModuleHandleW(PCWSTR::null())
+                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
 
-            let hook = SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(keyboard_hook_proc),
-                hinstance,
-                0
-            ).map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), hinstance, 0)
+                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
 
             self.hook = Some(hook);
         }
@@ -244,7 +232,7 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                     state.target_hwnd,
                     WM_TACTILE_KEY_EVENT,
                     WPARAM(vk_code as usize),
-                    LPARAM(0)
+                    LPARAM(0),
                 )
             };
 

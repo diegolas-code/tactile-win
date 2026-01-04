@@ -16,10 +16,7 @@ pub enum KeyboardError {
     /// Invalid key that's not in the current layout
     InvalidKey(char),
     /// Requested grid size not supported by this layout
-    UnsupportedGridSize {
-        cols: u32,
-        rows: u32,
-    },
+    UnsupportedGridSize { cols: u32, rows: u32 },
 }
 
 impl std::fmt::Display for KeyboardError {
@@ -170,11 +167,10 @@ impl QwertyLayout {
         let mut valid = Vec::new();
         for row in 0..self.rows {
             for col in 0..self.cols {
-                if
-                    let Some(key) = all_keys
-                        .get(row as usize)
-                        .and_then(|r| r.get(col as usize))
-                        .filter(|&&k| k != '\0')
+                if let Some(key) = all_keys
+                    .get(row as usize)
+                    .and_then(|r| r.get(col as usize))
+                    .filter(|&&k| k != '\0')
                 {
                     valid.push(*key);
                 }
@@ -270,8 +266,14 @@ mod tests {
         let layout = QwertyLayout::new(3, 2).unwrap();
 
         // Upper and lower case should map to same coordinates
-        assert_eq!(layout.key_to_coords('Q').unwrap(), layout.key_to_coords('q').unwrap());
-        assert_eq!(layout.key_to_coords('S').unwrap(), layout.key_to_coords('s').unwrap());
+        assert_eq!(
+            layout.key_to_coords('Q').unwrap(),
+            layout.key_to_coords('q').unwrap()
+        );
+        assert_eq!(
+            layout.key_to_coords('S').unwrap(),
+            layout.key_to_coords('s').unwrap()
+        );
     }
 
     #[test]
@@ -279,13 +281,28 @@ mod tests {
         let layout = QwertyLayout::new(3, 2).unwrap();
 
         // Invalid characters
-        assert_eq!(layout.key_to_coords('1'), Err(KeyboardError::InvalidKey('1')));
-        assert_eq!(layout.key_to_coords('!'), Err(KeyboardError::InvalidKey('!')));
-        assert_eq!(layout.key_to_coords(' '), Err(KeyboardError::InvalidKey(' ')));
+        assert_eq!(
+            layout.key_to_coords('1'),
+            Err(KeyboardError::InvalidKey('1'))
+        );
+        assert_eq!(
+            layout.key_to_coords('!'),
+            Err(KeyboardError::InvalidKey('!'))
+        );
+        assert_eq!(
+            layout.key_to_coords(' '),
+            Err(KeyboardError::InvalidKey(' '))
+        );
 
         // Valid keys but outside current grid bounds
-        assert_eq!(layout.key_to_coords('R'), Err(KeyboardError::InvalidKey('R'))); // Col 3, but grid is 3x2
-        assert_eq!(layout.key_to_coords('Z'), Err(KeyboardError::InvalidKey('Z'))); // Row 2, but grid is 3x2
+        assert_eq!(
+            layout.key_to_coords('R'),
+            Err(KeyboardError::InvalidKey('R'))
+        ); // Col 3, but grid is 3x2
+        assert_eq!(
+            layout.key_to_coords('Z'),
+            Err(KeyboardError::InvalidKey('Z'))
+        ); // Row 2, but grid is 3x2
     }
 
     #[test]

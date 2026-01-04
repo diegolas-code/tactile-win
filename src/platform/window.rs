@@ -97,7 +97,7 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo, WindowError> {
             window_rect.left,
             window_rect.top,
             window_rect.right - window_rect.left,
-            window_rect.bottom - window_rect.top
+            window_rect.bottom - window_rect.top,
         );
 
         // Check if window is resizable by examining its style
@@ -169,7 +169,7 @@ pub fn position_window(hwnd: HWND, target_rect: Rect) -> Result<(), WindowError>
             target_rect.y,
             target_rect.w,
             target_rect.h,
-            SWP_NOACTIVATE | SWP_NOZORDER
+            SWP_NOACTIVATE | SWP_NOZORDER,
         );
 
         if result.is_err() {

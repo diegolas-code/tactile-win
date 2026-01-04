@@ -19,7 +19,7 @@ use domain::core::Rect;
 use domain::grid::Grid;
 use domain::keyboard::GridCoords;
 use domain::selection::Selection;
-use platform::{ monitors, window };
+use platform::{monitors, window};
 
 // Phase 1 Constants
 const DEFAULT_GRID_COLS: u32 = 3;
@@ -86,7 +86,10 @@ fn create_main_window() -> Result<HWND, Box<dyn std::error::Error>> {
         RegisterClassW(&wc);
 
         // Create hidden window
-        let window_name: Vec<u16> = "TactileWin".encode_utf16().chain(std::iter::once(0)).collect();
+        let window_name: Vec<u16> = "TactileWin"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -100,7 +103,7 @@ fn create_main_window() -> Result<HWND, Box<dyn std::error::Error>> {
             None,
             None,
             instance,
-            None
+            None,
         );
 
         if hwnd.0 == 0 {
@@ -117,18 +120,21 @@ unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
-    lparam: LPARAM
+    lparam: LPARAM,
 ) -> LRESULT {
     // Check for custom keyboard event message
     const WM_TACTILE_KEY_EVENT: u32 = 0x8000;
-    
+
     if msg == WM_TACTILE_KEY_EVENT {
         // Get the application controller from window user data
         // For now, just log the event - we'll need to pass controller reference
-        println!("Main window: Received keyboard event, vk_code: {}", wparam.0);
+        println!(
+            "Main window: Received keyboard event, vk_code: {}",
+            wparam.0
+        );
         // TODO: Call controller.handle_keyboard_event(wparam) once we can access controller
     }
-    
+
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
@@ -189,7 +195,10 @@ fn demo_phase2_integration() {
 
     // Show selection results
     if let Some((tl, br)) = selection.get_normalized_coords() {
-        println!("   Normalized: ({},{}) to ({},{})", tl.row, tl.col, br.row, br.col);
+        println!(
+            "   Normalized: ({},{}) to ({},{})",
+            tl.row, tl.col, br.row, br.col
+        );
         if let Some((w, h)) = selection.get_dimensions() {
             println!(
                 "   Covers: {} cols x {} rows = {} cells",
@@ -201,7 +210,10 @@ fn demo_phase2_integration() {
 
         // Convert to screen rectangle
         match grid.coords_to_rect(tl, br) {
-            Ok(rect) => println!("   Screen rect: ({}, {}) {}x{}", rect.x, rect.y, rect.w, rect.h),
+            Ok(rect) => println!(
+                "   Screen rect: ({}, {}) {}x{}",
+                rect.x, rect.y, rect.w, rect.h
+            ),
             Err(e) => println!("   Conversion error: {:?}", e),
         }
     }
@@ -211,7 +223,10 @@ fn demo_phase2_integration() {
     match grid.keys_to_rect('Q', 'X') {
         Ok(rect) => {
             println!("   Q→X covers full grid width x 2 rows");
-            println!("   Screen rect: ({}, {}) {}x{}", rect.x, rect.y, rect.w, rect.h);
+            println!(
+                "   Screen rect: ({}, {}) {}x{}",
+                rect.x, rect.y, rect.w, rect.h
+            );
         }
         Err(e) => println!("   Error: {:?}", e),
     }
@@ -245,7 +260,7 @@ fn run_phase1_validation() -> Result<(), Box<dyn std::error::Error>> {
             DEFAULT_GRID_COLS,
             DEFAULT_GRID_ROWS,
             MIN_CELL_WIDTH,
-            MIN_CELL_HEIGHT
+            MIN_CELL_HEIGHT,
         );
 
         let should_reject = monitor.should_reject(MIN_MONITOR_HEIGHT);
@@ -268,7 +283,7 @@ fn run_phase1_validation() -> Result<(), Box<dyn std::error::Error>> {
                 DEFAULT_GRID_COLS,
                 DEFAULT_GRID_ROWS,
                 MIN_CELL_WIDTH,
-                MIN_CELL_HEIGHT
+                MIN_CELL_HEIGHT,
             ) && !m.should_reject(MIN_MONITOR_HEIGHT)
         })
         .collect();
@@ -277,7 +292,10 @@ fn run_phase1_validation() -> Result<(), Box<dyn std::error::Error>> {
         return Err("No monitors meet the minimum requirements for grid positioning".into());
     }
 
-    println!("   {} monitors are suitable for grid positioning", usable_monitors.len());
+    println!(
+        "   {} monitors are suitable for grid positioning",
+        usable_monitors.len()
+    );
 
     // 4. Window management test
     println!("2. Testing window management...");
@@ -286,10 +304,7 @@ fn run_phase1_validation() -> Result<(), Box<dyn std::error::Error>> {
             println!("   Active window: \"{}\"", window_info.title);
             println!(
                 "   Position: {}x{} at ({}, {})",
-                window_info.rect.w,
-                window_info.rect.h,
-                window_info.rect.x,
-                window_info.rect.y
+                window_info.rect.w, window_info.rect.h, window_info.rect.x, window_info.rect.y
             );
             println!("   Resizable: {}", window_info.is_resizable);
             println!("   Maximized: {}", window_info.is_maximized);
@@ -327,7 +342,7 @@ fn demo_window_positioning() -> Result<(), Box<dyn std::error::Error>> {
         primary_monitor.work_area.x,
         primary_monitor.work_area.y,
         primary_monitor.work_area.w / 2,
-        primary_monitor.work_area.h
+        primary_monitor.work_area.h,
     );
 
     println!("Positioning window to left half of primary monitor...");
@@ -336,10 +351,7 @@ fn demo_window_positioning() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!(
         "Target rectangle: {}x{} at ({}, {})",
-        target_rect.w,
-        target_rect.h,
-        target_rect.x,
-        target_rect.y
+        target_rect.w, target_rect.h, target_rect.x, target_rect.y
     );
 
     window::position_window(window_info.handle, target_rect)?;

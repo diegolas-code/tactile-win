@@ -3,28 +3,18 @@
 //! The controller orchestrates between input, domain, UI, and platform layers.
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
-use crate::app::state::{ AppState, StateEvent, StateMachine };
+use crate::app::state::{AppState, StateEvent, StateMachine};
 use crate::domain::grid::Grid;
-use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
-use crate::platform::monitors::{ enumerate_monitors, Monitor, MonitorError };
-use crate::ui::{ OverlayError, OverlayManager };
-use std::sync::{ Arc, Mutex };
-use windows::Win32::Foundation::{ HWND, WPARAM };
+use crate::input::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard};
+use crate::platform::monitors::{Monitor, MonitorError, enumerate_monitors};
+use crate::ui::{OverlayError, OverlayManager};
+use std::sync::{Arc, Mutex};
+use windows::Win32::Foundation::{HWND, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT,
-    MOD_CONTROL,
-    RegisterHotKey,
-    UnregisterHotKey,
-    VK_F9,
+    MOD_ALT, MOD_CONTROL, RegisterHotKey, UnregisterHotKey, VK_F9,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW,
-    MSG,
-    PM_REMOVE,
-    PeekMessageW,
-    TranslateMessage,
-    WM_HOTKEY,
-    WM_QUIT,
+    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage, WM_HOTKEY, WM_QUIT,
 };
 
 const MAIN_HOTKEY_ID: i32 = 1;
@@ -279,13 +269,14 @@ impl AppController {
                     grids.push(grid);
                     println!(
                         "Monitor {}: Created 2x3 grid (2 rows, 3 cols) for {}x{} area",
-                        i,
-                        monitor.work_area.w,
-                        monitor.work_area.h
+                        i, monitor.work_area.w, monitor.work_area.h
                     );
                 }
                 Err(e) => {
-                    return Err(AppError::GridCreationFailed(format!("Monitor {}: {:?}", i, e)));
+                    return Err(AppError::GridCreationFailed(format!(
+                        "Monitor {}: {:?}",
+                        i, e
+                    )));
                 }
             }
         }
@@ -413,7 +404,8 @@ impl AppController {
                     selecting.active_monitor_index
                 );
                 // Show overlays and start keyboard capture
-                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
+                self.overlay_manager
+                    .set_active_monitor(selecting.active_monitor_index);
                 self.overlay_manager.show_all();
 
                 // Start keyboard capture
@@ -441,8 +433,7 @@ impl AppController {
                 if grid.contains_key(key) {
                     println!(
                         "Valid grid key: '{}' on monitor {}",
-                        key,
-                        selecting.active_monitor_index
+                        key, selecting.active_monitor_index
                     );
 
                     // Convert key to coordinates
@@ -453,7 +444,7 @@ impl AppController {
                                 // Update state with new selection progress
                                 let new_state = AppState::Selecting(selecting.clone());
                                 *self.state.lock().unwrap() = new_state;
-                                
+
                                 // Check if selection is complete
                                 if selecting.selection.is_complete() {
                                     println!("Selection completed!");
@@ -497,7 +488,8 @@ impl AppController {
         if let AppState::Selecting(selecting) = new_state {
             println!("Switched to monitor {}", selecting.active_monitor_index);
             // Update overlay rendering to show new active monitor
-            self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
+            self.overlay_manager
+                .set_active_monitor(selecting.active_monitor_index);
             self.overlay_manager.render_grids();
         }
     }
@@ -536,12 +528,14 @@ impl AppController {
         if let AppState::Selecting(selecting) = current_state {
             println!("DEBUG: Active monitor: {}", selecting.active_monitor_index);
             println!("DEBUG: Selection state: {:?}", selecting.selection.state());
-            
+
             // Get the selection rectangle
             if let Some((top_left, bottom_right)) = selecting.selection.get_normalized_coords() {
-                println!("DEBUG: Got normalized coords: ({},{}) to ({},{})", 
-                    top_left.row, top_left.col, bottom_right.row, bottom_right.col);
-                    
+                println!(
+                    "DEBUG: Got normalized coords: ({},{}) to ({},{})",
+                    top_left.row, top_left.col, bottom_right.row, bottom_right.col
+                );
+
                 // Get the grid for the active monitor
                 if let Some(grid) = self.get_grid(selecting.active_monitor_index) {
                     // Convert selection to screen rectangle
@@ -549,21 +543,25 @@ impl AppController {
                         Ok(target_rect) => {
                             println!(
                                 "Selection: ({},{}) to ({},{}) = screen rect ({},{}) {}x{}",
-                                top_left.row, top_left.col,
-                                bottom_right.row, bottom_right.col,
-                                target_rect.x, target_rect.y,
-                                target_rect.w, target_rect.h
+                                top_left.row,
+                                top_left.col,
+                                bottom_right.row,
+                                bottom_right.col,
+                                target_rect.x,
+                                target_rect.y,
+                                target_rect.w,
+                                target_rect.h
                             );
 
                             // Get the active window and position it
                             match crate::platform::window::get_active_window() {
                                 Ok(window_info) => {
                                     println!("Active window: {}", window_info.title);
-                                    
+
                                     // Position the window
                                     match crate::platform::window::position_window(
                                         window_info.handle,
-                                        target_rect
+                                        target_rect,
                                     ) {
                                         Ok(_) => {
                                             println!("✓ Window positioned successfully");
@@ -583,7 +581,10 @@ impl AppController {
                         }
                     }
                 } else {
-                    eprintln!("DEBUG: Failed to get grid for monitor {}", selecting.active_monitor_index);
+                    eprintln!(
+                        "DEBUG: Failed to get grid for monitor {}",
+                        selecting.active_monitor_index
+                    );
                 }
             } else {
                 eprintln!("DEBUG: get_normalized_coords() returned None!");
@@ -700,7 +701,7 @@ impl AppController {
                 // Check for selection timeout if in selecting mode
                 if matches!(self.get_state(), AppState::Selecting(_)) {
                     self.check_timeout();
-                    
+
                     // Exit loop if we've returned to idle after timeout
                     if matches!(self.get_state(), AppState::Idle) {
                         continue;
