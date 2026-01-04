@@ -7,17 +7,19 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-use windows::core::{w};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, 
-    PostQuitMessage, RegisterClassW, MSG, 
-    WNDCLASSW, WM_HOTKEY, WM_DESTROY, WS_OVERLAPPED,
-    SetWindowLongPtrW, GetWindowLongPtrW, GWLP_USERDATA,
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    HOT_KEY_MODIFIERS, RegisterHotKey, UnregisterHotKey,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW,
+    GetWindowLongPtrW, MSG, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, WM_DESTROY,
+    WM_HOTKEY, WNDCLASSW, WS_OVERLAPPED,
+};
+use windows::core::w;
 
 /// Modifier keys for hotkey combinations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -31,9 +33,10 @@ pub enum HotkeyModifier {
 /// Virtual key codes for hotkey registration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
-    Tab = 0x09,  // Tab key
+    Tab = 0x09, // Tab key
     Space = 0x20,
     T = 0x54, // Letter T
+    Oem3 = 0xC0, // Backtick / tilde key
     F1 = 0x70,
     F2 = 0x71,
     F3 = 0x72,
@@ -53,22 +56,22 @@ pub enum VirtualKey {
 pub enum HotkeyError {
     #[error("Failed to register window class")]
     WindowClassRegistrationFailed,
-    
+
     #[error("Failed to create message window")]
     MessageWindowCreationFailed,
-    
+
     #[error("Failed to register hotkey: {0}")]
     HotkeyRegistrationFailed(String),
-    
+
     #[error("Failed to unregister hotkey: {id}")]
     HotkeyUnregistrationFailed { id: u32 },
-    
+
     #[error("Hotkey manager already running")]
     AlreadyRunning,
-    
+
     #[error("Hotkey manager not running")]
     NotRunning,
-    
+
     #[error("Thread join failed")]
     ThreadJoinFailed,
 }
@@ -83,16 +86,16 @@ pub type HotkeyCallback = Arc<dyn Fn() + Send + Sync>;
 pub struct HotkeyManager {
     // Thread handle for message loop
     thread_handle: Option<JoinHandle<()>>,
-    
+
     // Atomic flag to signal thread shutdown
     shutdown: Arc<AtomicBool>,
-    
+
     // Message window handle (shared with message thread)
     window_handle: Arc<Mutex<Option<HWND>>>,
-    
+
     // Registered hotkeys and their callbacks
     hotkeys: Arc<Mutex<HashMap<u32, HotkeyCallback>>>,
-    
+
     // Next available hotkey ID
     next_id: Arc<AtomicU32>,
 }
@@ -108,21 +111,21 @@ impl HotkeyManager {
             next_id: Arc::new(AtomicU32::new(1)),
         }
     }
-    
+
     /// Start the hotkey manager message loop thread
     pub fn start(&mut self) -> Result<(), HotkeyError> {
         if self.thread_handle.is_some() {
             return Err(HotkeyError::AlreadyRunning);
         }
-        
+
         // Reset shutdown flag
         self.shutdown.store(false, Ordering::Relaxed);
-        
+
         // Clone necessary data for the thread
         let shutdown = Arc::clone(&self.shutdown);
         let window_handle = Arc::clone(&self.window_handle);
         let hotkeys = Arc::clone(&self.hotkeys);
-        
+
         // Start message loop thread
         let handle = thread::spawn(move || {
             println!("HotkeyManager: Starting message loop thread...");
@@ -135,41 +138,62 @@ impl HotkeyManager {
                 }
             }
         });
-        
+
         self.thread_handle = Some(handle);
-        
-        // Wait briefly for window creation
-        thread::sleep(std::time::Duration::from_millis(50));
-        
+
+        // Wait for the message window to be created before returning
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            {
+                let guard = self
+                    .window_handle
+                    .lock()
+                    .map_err(|_| HotkeyError::MessageWindowCreationFailed)?;
+                if guard.is_some() {
+                    break;
+                }
+            }
+
+            if Instant::now() >= deadline {
+                self.shutdown.store(true, Ordering::Relaxed);
+                if let Some(handle) = self.thread_handle.take() {
+                    let _ = handle.join();
+                }
+                return Err(HotkeyError::MessageWindowCreationFailed);
+            }
+
+            thread::sleep(Duration::from_millis(10));
+        }
+
         Ok(())
     }
-    
+
     /// Stop the hotkey manager and clean up resources
     pub fn stop(&mut self) -> Result<(), HotkeyError> {
         if self.thread_handle.is_none() {
             return Err(HotkeyError::NotRunning);
         }
-        
+
         // Signal shutdown
         self.shutdown.store(true, Ordering::Relaxed);
-        
+
         // Post quit message to thread
         if let Ok(guard) = self.window_handle.lock() {
-            if let Some(hwnd) = *guard {
+            if let Some(_hwnd) = *guard {
                 unsafe {
                     PostQuitMessage(0);
                 }
             }
         }
-        
+
         // Wait for thread to finish
         if let Some(handle) = self.thread_handle.take() {
             handle.join().map_err(|_| HotkeyError::ThreadJoinFailed)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Register a global hotkey with callback
     pub fn register_hotkey(
         &self,
@@ -178,69 +202,82 @@ impl HotkeyManager {
         callback: HotkeyCallback,
     ) -> Result<u32, HotkeyError> {
         // Calculate modifier mask
-        let modifier_mask = modifiers.iter()
+        let modifier_mask = modifiers
+            .iter()
             .fold(0u32, |acc, &modifier| acc | modifier as u32);
-        
+
         // Get next available ID
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        
+
         // Get window handle
         let hwnd = {
-            let guard = self.window_handle.lock()
+            let guard = self
+                .window_handle
+                .lock()
                 .map_err(|_| HotkeyError::HotkeyRegistrationFailed("Lock failed".to_string()))?;
-            (*guard).ok_or_else(|| HotkeyError::HotkeyRegistrationFailed("No window".to_string()))?
+            (*guard)
+                .ok_or_else(|| HotkeyError::HotkeyRegistrationFailed("No window".to_string()))?
         };
-        
+
         // Register with Win32
         let result = unsafe {
-            RegisterHotKey(hwnd, id as i32, HOT_KEY_MODIFIERS(modifier_mask), key as u32)
+            RegisterHotKey(
+                hwnd,
+                id as i32,
+                HOT_KEY_MODIFIERS(modifier_mask),
+                key as u32,
+            )
         };
-        
+
         if result.is_ok() {
             // Store callback
-            let mut hotkeys = self.hotkeys.lock()
-                .map_err(|_| HotkeyError::HotkeyRegistrationFailed("Callback storage failed".to_string()))?;
+            let mut hotkeys = self.hotkeys.lock().map_err(|_| {
+                HotkeyError::HotkeyRegistrationFailed("Callback storage failed".to_string())
+            })?;
             hotkeys.insert(id, callback);
-            
+
             Ok(id)
         } else {
             Err(HotkeyError::HotkeyRegistrationFailed(format!(
-                "Win32 RegisterHotKey failed for key {:?} with modifiers {:?}", key, modifiers
+                "Win32 RegisterHotKey failed for key {:?} with modifiers {:?}",
+                key, modifiers
             )))
         }
     }
-    
+
     /// Unregister a hotkey by ID
     pub fn unregister_hotkey(&self, id: u32) -> Result<(), HotkeyError> {
         // Get window handle
         let hwnd = {
-            let guard = self.window_handle.lock()
+            let guard = self
+                .window_handle
+                .lock()
                 .map_err(|_| HotkeyError::HotkeyUnregistrationFailed { id })?;
             (*guard).ok_or_else(|| HotkeyError::HotkeyUnregistrationFailed { id })?
         };
-        
+
         // Unregister with Win32
-        let result = unsafe {
-            UnregisterHotKey(hwnd, id as i32)
-        };
-        
+        let result = unsafe { UnregisterHotKey(hwnd, id as i32) };
+
         if result.is_ok() {
             // Remove callback
-            let mut hotkeys = self.hotkeys.lock()
+            let mut hotkeys = self
+                .hotkeys
+                .lock()
                 .map_err(|_| HotkeyError::HotkeyUnregistrationFailed { id })?;
             hotkeys.remove(&id);
-            
+
             Ok(())
         } else {
             Err(HotkeyError::HotkeyUnregistrationFailed { id })
         }
     }
-    
+
     /// Check if the manager is currently running
     pub fn is_running(&self) -> bool {
         self.thread_handle.is_some() && !self.shutdown.load(Ordering::Relaxed)
     }
-    
+
     /// Message loop thread function
     fn message_loop_thread(
         shutdown: Arc<AtomicBool>,
@@ -249,20 +286,21 @@ impl HotkeyManager {
     ) -> Result<(), HotkeyError> {
         // Create message-only window
         let hwnd = Self::create_message_window(&hotkeys)?;
-        
+
         // Store window handle
         {
-            let mut guard = window_handle.lock()
+            let mut guard = window_handle
+                .lock()
                 .map_err(|_| HotkeyError::MessageWindowCreationFailed)?;
             *guard = Some(hwnd);
         }
-        
+
         // Message loop
         let mut msg = MSG::default();
-        
+
         while !shutdown.load(Ordering::Relaxed) {
             let result = unsafe { GetMessageW(&mut msg, None, 0, 0) };
-            
+
             if result.0 == 0 {
                 // WM_QUIT received
                 break;
@@ -270,33 +308,34 @@ impl HotkeyManager {
                 // Error occurred
                 break;
             }
-            
+
             unsafe {
                 DispatchMessageW(&msg);
             }
         }
-        
+
         // Clean up window
         unsafe {
             DestroyWindow(hwnd).ok();
         }
-        
+
         // Clear window handle
         {
-            let mut guard = window_handle.lock()
+            let mut guard = window_handle
+                .lock()
                 .map_err(|_| HotkeyError::MessageWindowCreationFailed)?;
             *guard = None;
         }
-        
+
         Ok(())
     }
-    
+
     /// Create message-only window for hotkey events
     fn create_message_window(
         hotkeys: &Arc<Mutex<HashMap<u32, HotkeyCallback>>>,
     ) -> Result<HWND, HotkeyError> {
         let class_name = w!("TactileWinHotkeyWindow");
-        
+
         // Window procedure for handling messages
         unsafe extern "system" fn window_proc(
             hwnd: HWND,
@@ -307,15 +346,16 @@ impl HotkeyManager {
             match msg {
                 WM_HOTKEY => {
                     let hotkey_id = wparam.0 as u32;
-                    
+
                     // Get the hotkeys map from window user data
-                    let hotkeys_ptr = unsafe { 
-                        GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Arc<Mutex<HashMap<u32, HotkeyCallback>>>
+                    let hotkeys_ptr = unsafe {
+                        GetWindowLongPtrW(hwnd, GWLP_USERDATA)
+                            as *const Arc<Mutex<HashMap<u32, HotkeyCallback>>>
                     };
-                    
+
                     if !hotkeys_ptr.is_null() {
                         let hotkeys = unsafe { &*hotkeys_ptr };
-                        
+
                         // Find and call the callback
                         if let Ok(guard) = hotkeys.lock() {
                             if let Some(callback) = guard.get(&hotkey_id) {
@@ -324,7 +364,7 @@ impl HotkeyManager {
                             }
                         }
                     }
-                    
+
                     LRESULT(0)
                 }
                 WM_DESTROY => {
@@ -336,22 +376,22 @@ impl HotkeyManager {
                 _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
             }
         }
-        
+
         // Register window class
         let hinstance = unsafe { GetModuleHandleW(None).unwrap() };
-        
+
         let wc = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: hinstance.into(),
             lpszClassName: class_name,
             ..Default::default()
         };
-        
+
         let class_atom = unsafe { RegisterClassW(&wc) };
         if class_atom == 0 {
             return Err(HotkeyError::WindowClassRegistrationFailed);
         }
-        
+
         // Create message-only window
         let hwnd = unsafe {
             CreateWindowExW(
@@ -359,23 +399,26 @@ impl HotkeyManager {
                 class_name,
                 w!(""),
                 WS_OVERLAPPED,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 None, // HWND_MESSAGE would be ideal but isn't easily available
                 None,
                 hinstance,
                 None,
             )
         };
-        
+
         if hwnd.0 == 0 {
             return Err(HotkeyError::MessageWindowCreationFailed);
         }
-        
+
         // Store the hotkeys map pointer in the window's user data
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, hotkeys as *const _ as isize);
         }
-        
+
         Ok(hwnd)
     }
 }
@@ -392,45 +435,45 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
     use std::time::Duration;
-    
+
     #[test]
     fn hotkey_manager_creation() {
         let manager = HotkeyManager::new();
         assert!(!manager.is_running());
     }
-    
+
     #[test]
     fn hotkey_manager_start_stop() {
         let mut manager = HotkeyManager::new();
-        
+
         // Start the manager
         manager.start().expect("Failed to start hotkey manager");
         assert!(manager.is_running());
-        
+
         // Stop the manager
         manager.stop().expect("Failed to stop hotkey manager");
         assert!(!manager.is_running());
     }
-    
+
     #[test]
     fn hotkey_registration() {
         let mut manager = HotkeyManager::new();
         manager.start().expect("Failed to start hotkey manager");
-        
+
         let callback_called = Arc::new(AtomicBool::new(false));
         let callback_ref = Arc::clone(&callback_called);
-        
+
         let callback = Arc::new(move || {
             callback_ref.store(true, Ordering::Relaxed);
         });
-        
+
         // Register a hotkey (this will likely fail in test environment due to conflicts)
         let result = manager.register_hotkey(
             &[HotkeyModifier::Control, HotkeyModifier::Alt],
             VirtualKey::F12,
             callback,
         );
-        
+
         // In test environment, registration might fail due to conflicts
         // but the API should work without panicking
         match result {
@@ -443,22 +486,22 @@ mod tests {
                 println!("Hotkey registration failed (expected): {e:?}");
             }
         }
-        
+
         manager.stop().expect("Failed to stop hotkey manager");
     }
-    
+
     #[test]
     fn multiple_start_stop() {
         let mut manager = HotkeyManager::new();
-        
+
         // Multiple starts should fail
         manager.start().expect("First start should succeed");
         assert!(manager.start().is_err());
-        
+
         // Stop should work
         manager.stop().expect("Stop should succeed");
         assert!(manager.stop().is_err());
-        
+
         // Should be able to start again
         manager.start().expect("Restart should succeed");
         manager.stop().expect("Final stop should succeed");

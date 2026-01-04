@@ -1,8 +1,5 @@
 pub mod hotkeys;
 pub mod keyboard;
 
-pub use hotkeys::{HotkeyManager, HotkeyError, HotkeyModifier, VirtualKey};
-pub use keyboard::{
-    KeyboardCapture, KeyboardCaptureGuard, KeyboardCaptureError, 
-    KeyEvent, NavigationDirection
-};
+pub use hotkeys::{HotkeyError, HotkeyManager, HotkeyModifier, VirtualKey};
+pub use keyboard::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard, NavigationDirection};

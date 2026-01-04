@@ -3,9 +3,9 @@
 //! This module contains Win32 helper functions that don't fit into
 //! other specialized platform modules.
 
-use windows::Win32::UI::WindowsAndMessaging::{ GetForegroundWindow };
-use windows::Win32::Foundation::HWND;
 use crate::domain::core::Rect;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 /// Gets the currently active (foreground) window
 ///

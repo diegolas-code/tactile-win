@@ -3,8 +3,8 @@
 //! Defines the core application state machine and state transitions.
 //! The state is kept simple with transient selection data only.
 
-use std::time::Instant;
 use crate::domain::selection::Selection;
+use std::time::Instant;
 
 /// Main application state - either idle or actively selecting
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,8 +16,8 @@ pub enum AppState {
 }
 
 /// State during active selection process
-/// 
-/// This contains only transient state data. Stable configuration 
+///
+/// This contains only transient state data. Stable configuration
 /// like grids and monitors lives in AppController.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectingState {
@@ -31,7 +31,7 @@ pub struct SelectingState {
 
 impl SelectingState {
     /// Creates a new selecting state
-    /// 
+    ///
     /// # Arguments
     /// * `active_monitor_index` - Index of monitor to start selection on
     pub fn new(active_monitor_index: usize) -> Self {
@@ -43,7 +43,7 @@ impl SelectingState {
     }
 
     /// Checks if the selection has timed out (30 seconds)
-    /// 
+    ///
     /// # Returns
     /// true if selection should be automatically cancelled
     pub fn is_timed_out(&self) -> bool {
@@ -51,7 +51,7 @@ impl SelectingState {
     }
 
     /// Gets the remaining time before timeout
-    /// 
+    ///
     /// # Returns
     /// Seconds remaining before automatic timeout
     pub fn remaining_timeout(&self) -> u64 {
@@ -59,7 +59,7 @@ impl SelectingState {
     }
 
     /// Switches to a different monitor during selection
-    /// 
+    ///
     /// # Arguments  
     /// * `monitor_index` - Index of monitor to switch to
     pub fn switch_monitor(&mut self, monitor_index: usize) {
@@ -109,18 +109,18 @@ impl StateMachine {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Processes a state event and returns the new state
-    /// 
+    ///
     /// # Arguments
     /// * `current_state` - Current application state
     /// * `event` - Event to process
     /// * `monitor_count` - Number of available monitors for bounds checking
-    /// 
+    ///
     /// # Returns
     /// New application state after processing the event
     pub fn process_event(
-        current_state: AppState, 
+        current_state: AppState,
         event: StateEvent,
         monitor_count: usize,
     ) -> AppState {
@@ -130,15 +130,15 @@ impl StateMachine {
                 println!("STATE MACHINE: Idle -> Selecting (starting selection on monitor 0)");
                 // Start selection on primary monitor (index 0)
                 AppState::Selecting(SelectingState::new(0))
-            },
-            
-            // From Selecting state  
+            }
+
+            // From Selecting state
             (AppState::Selecting(selecting), StateEvent::KeyPressed(_key)) => {
                 // Process key press in selection
                 // Note: Grid validation will happen in controller
                 AppState::Selecting(selecting)
-            },
-            
+            }
+
             (AppState::Selecting(mut selecting), StateEvent::Navigation(direction)) => {
                 // Handle monitor navigation
                 let new_monitor_index = match direction {
@@ -148,44 +148,44 @@ impl StateMachine {
                         } else {
                             monitor_count.saturating_sub(1) // Wrap to last monitor
                         }
-                    },
+                    }
                     NavigationDirection::Right => {
                         if selecting.active_monitor_index + 1 < monitor_count {
                             selecting.active_monitor_index + 1
                         } else {
                             0 // Wrap to first monitor
                         }
-                    },
+                    }
                     // Up/Down navigation reserved for future multi-row monitor layouts
                     NavigationDirection::Up | NavigationDirection::Down => {
                         selecting.active_monitor_index // No change for now
-                    },
+                    }
                 };
-                
+
                 selecting.switch_monitor(new_monitor_index);
                 AppState::Selecting(selecting)
-            },
-            
+            }
+
             (AppState::Selecting(_), StateEvent::SelectionCompleted) => {
                 // Selection successful, return to idle
                 AppState::Idle
-            },
-            
+            }
+
             (AppState::Selecting(_), StateEvent::SelectionCancelled) => {
                 // User cancelled, return to idle
                 AppState::Idle
-            },
-            
+            }
+
             (AppState::Selecting(_), StateEvent::SelectionTimedOut) => {
                 // Automatic timeout, return to idle
                 AppState::Idle
-            },
-            
+            }
+
             (AppState::Selecting(_), StateEvent::HotkeyPressed) => {
                 // Hotkey pressed during selection = toggle off
                 AppState::Idle
-            },
-            
+            }
+
             // Invalid transitions - ignore event
             (state, _) => state,
         }
@@ -217,7 +217,7 @@ mod tests {
             StateEvent::HotkeyPressed,
             2, // 2 monitors
         );
-        
+
         assert!(matches!(state, AppState::Selecting(_)));
         if let AppState::Selecting(selecting) = state {
             assert_eq!(selecting.active_monitor_index, 0); // Starts on primary monitor
@@ -228,14 +228,14 @@ mod tests {
     fn navigation_switches_monitors() {
         let initial_selecting = SelectingState::new(0);
         let state = AppState::Selecting(initial_selecting);
-        
+
         // Navigate right from monitor 0 to monitor 1
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
             3, // 3 monitors
         );
-        
+
         if let AppState::Selecting(selecting) = new_state {
             assert_eq!(selecting.active_monitor_index, 1);
         } else {
@@ -247,14 +247,14 @@ mod tests {
     fn navigation_wraps_around() {
         let initial_selecting = SelectingState::new(2); // Last monitor
         let state = AppState::Selecting(initial_selecting);
-        
+
         // Navigate right should wrap to monitor 0
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
             3, // 3 monitors (indices 0, 1, 2)
         );
-        
+
         if let AppState::Selecting(selecting) = new_state {
             assert_eq!(selecting.active_monitor_index, 0);
         } else {
@@ -266,13 +266,9 @@ mod tests {
     fn selection_completion_returns_to_idle() {
         let selecting = SelectingState::new(0);
         let state = AppState::Selecting(selecting);
-        
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::SelectionCompleted,
-            1,
-        );
-        
+
+        let new_state = StateMachine::process_event(state, StateEvent::SelectionCompleted, 1);
+
         assert!(matches!(new_state, AppState::Idle));
     }
 
@@ -280,13 +276,9 @@ mod tests {
     fn escape_cancels_selection() {
         let selecting = SelectingState::new(0);
         let state = AppState::Selecting(selecting);
-        
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::SelectionCancelled,
-            1,
-        );
-        
+
+        let new_state = StateMachine::process_event(state, StateEvent::SelectionCancelled, 1);
+
         assert!(matches!(new_state, AppState::Idle));
     }
 
@@ -294,24 +286,20 @@ mod tests {
     fn hotkey_during_selection_toggles_off() {
         let selecting = SelectingState::new(0);
         let state = AppState::Selecting(selecting);
-        
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::HotkeyPressed,
-            1,
-        );
-        
+
+        let new_state = StateMachine::process_event(state, StateEvent::HotkeyPressed, 1);
+
         assert!(matches!(new_state, AppState::Idle));
     }
 
     #[test]
     fn monitor_switching_resets_selection() {
         let mut selecting = SelectingState::new(0);
-        
+
         // Simulate some selection progress (this would normally be set by controller)
         // For now just verify the monitor index changes and selection gets reset
         selecting.switch_monitor(1);
-        
+
         assert_eq!(selecting.active_monitor_index, 1);
         assert!(selecting.selection.is_empty());
     }

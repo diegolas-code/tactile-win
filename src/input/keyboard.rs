@@ -7,18 +7,16 @@
 //! - All events are posted to main thread for processing
 //! - This prevents deadlocks and race conditions
 
-use std::sync::Arc;
 use windows::{
-    core::PCWSTR,
     Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, WPARAM, HINSTANCE},
-        UI::WindowsAndMessaging::{
-            SetWindowsHookExW, UnhookWindowsHookEx, CallNextHookEx, PostMessageW,
-            HHOOK, WH_KEYBOARD_LL, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN,
-            HC_ACTION,
-        },
+        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
         System::LibraryLoader::GetModuleHandleW,
+        UI::WindowsAndMessaging::{
+            CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW,
+            UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        },
     },
+    core::PCWSTR,
 };
 
 /// Custom window message for keyboard events from hook
@@ -63,7 +61,7 @@ impl KeyEvent {
         match vk_code {
             // Grid keys (QWERTY layout)
             0x51 => Some(KeyEvent::GridKey('Q')), // Q
-            0x57 => Some(KeyEvent::GridKey('W')), // W  
+            0x57 => Some(KeyEvent::GridKey('W')), // W
             0x45 => Some(KeyEvent::GridKey('E')), // E
             0x52 => Some(KeyEvent::GridKey('R')), // R
             0x54 => Some(KeyEvent::GridKey('T')), // T
@@ -72,7 +70,7 @@ impl KeyEvent {
             0x49 => Some(KeyEvent::GridKey('I')), // I
             0x4F => Some(KeyEvent::GridKey('O')), // O
             0x50 => Some(KeyEvent::GridKey('P')), // P
-            
+
             0x41 => Some(KeyEvent::GridKey('A')), // A
             0x53 => Some(KeyEvent::GridKey('S')), // S
             0x44 => Some(KeyEvent::GridKey('D')), // D
@@ -82,7 +80,7 @@ impl KeyEvent {
             0x4A => Some(KeyEvent::GridKey('J')), // J
             0x4B => Some(KeyEvent::GridKey('K')), // K
             0x4C => Some(KeyEvent::GridKey('L')), // L
-            
+
             0x5A => Some(KeyEvent::GridKey('Z')), // Z
             0x58 => Some(KeyEvent::GridKey('X')), // X
             0x43 => Some(KeyEvent::GridKey('C')), // C
@@ -90,16 +88,16 @@ impl KeyEvent {
             0x42 => Some(KeyEvent::GridKey('B')), // B
             0x4E => Some(KeyEvent::GridKey('N')), // N
             0x4D => Some(KeyEvent::GridKey('M')), // M
-            
+
             // Navigation keys
-            0x25 => Some(KeyEvent::Navigation(NavigationDirection::Left)),  // VK_LEFT
+            0x25 => Some(KeyEvent::Navigation(NavigationDirection::Left)), // VK_LEFT
             0x27 => Some(KeyEvent::Navigation(NavigationDirection::Right)), // VK_RIGHT
-            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)),    // VK_UP
-            0x28 => Some(KeyEvent::Navigation(NavigationDirection::Down)),  // VK_DOWN
-            
+            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)),   // VK_UP
+            0x28 => Some(KeyEvent::Navigation(NavigationDirection::Down)), // VK_DOWN
+
             // Cancel keys
             0x1B => Some(KeyEvent::Cancel), // VK_ESCAPE
-            
+
             // Invalid key - return None to pass through
             _ => None,
         }
@@ -112,6 +110,10 @@ static mut KEYBOARD_CAPTURE_STATE: Option<KeyboardCaptureState> = None;
 
 struct KeyboardCaptureState {
     target_hwnd: HWND,
+}
+
+fn call_next_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 /// Manages modal keyboard capture during selection mode
@@ -131,7 +133,7 @@ impl KeyboardCapture {
     }
 
     /// Start capturing keyboard input
-    /// 
+    ///
     /// CRITICAL: This installs a low-level keyboard hook that runs on system thread.
     /// The hook callback posts events to main thread - never mutates state directly.
     pub fn start_capture(&mut self) -> Result<(), KeyboardCaptureError> {
@@ -149,14 +151,9 @@ impl KeyboardCapture {
             // Install low-level keyboard hook
             let hinstance = GetModuleHandleW(PCWSTR::null())
                 .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
-            
-            let hook = SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(keyboard_hook_proc),
-                hinstance,
-                0,
-            )
-            .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+
+            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), hinstance, 0)
+                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
 
             self.hook = Some(hook);
         }
@@ -169,9 +166,8 @@ impl KeyboardCapture {
         if let Some(hook) = self.hook.take() {
             unsafe {
                 // Remove hook
-                UnhookWindowsHookEx(hook)
-                    .map_err(|_| KeyboardCaptureError::UninstallFailed)?;
-                
+                UnhookWindowsHookEx(hook).map_err(|_| KeyboardCaptureError::UninstallFailed)?;
+
                 // Clear global state
                 KEYBOARD_CAPTURE_STATE = None;
             }
@@ -193,34 +189,30 @@ impl Drop for KeyboardCapture {
 }
 
 /// Low-level keyboard hook procedure
-/// 
+///
 /// CRITICAL THREADING NOTES:
 /// - This runs on SYSTEM thread, NOT main application thread
 /// - NEVER mutate application state from this callback
 /// - NEVER call blocking operations from this callback
 /// - Only post messages to main thread for processing
 /// - Must call CallNextHookEx to maintain system stability
-unsafe extern "system" fn keyboard_hook_proc(
-    code: i32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // Only process HC_ACTION
     if code < 0 {
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        return call_next_hook(code, wparam, lparam);
     }
 
     // Check if we have valid state
     let state = unsafe {
         match &*std::ptr::addr_of!(KEYBOARD_CAPTURE_STATE) {
             Some(state) => state,
-            None => return unsafe { CallNextHookEx(None, code, wparam, lparam) },
+            None => return call_next_hook(code, wparam, lparam),
         }
     };
 
     // Only handle key down events
     if wparam.0 != WM_KEYDOWN as usize && wparam.0 != WM_SYSKEYDOWN as usize {
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        return call_next_hook(code, wparam, lparam);
     }
 
     // Parse keyboard data
@@ -241,13 +233,13 @@ unsafe extern "system" fn keyboard_hook_proc(
                     LPARAM(0),
                 )
             };
-            
+
             // Return non-zero to consume the key (don't pass to other applications)
             LRESULT(1)
         }
         None => {
             // Not a tactile key - pass through to system
-            unsafe { CallNextHookEx(None, code, wparam, lparam) }
+            call_next_hook(code, wparam, lparam)
         }
     }
 }
@@ -263,7 +255,7 @@ impl KeyboardCaptureGuard {
     pub fn new(target_hwnd: HWND) -> Result<Self, KeyboardCaptureError> {
         let mut capture = KeyboardCapture::new(target_hwnd);
         capture.start_capture()?;
-        
+
         Ok(Self { capture })
     }
 
@@ -278,7 +270,7 @@ impl KeyboardCaptureGuard {
     }
 
     /// Parse a Windows message into a KeyEvent
-    /// 
+    ///
     /// Call this from your main window procedure when receiving WM_TACTILE_KEY_EVENT
     pub fn parse_message(wparam: WPARAM) -> Option<KeyEvent> {
         let vk_code = wparam.0 as u32;
@@ -296,27 +288,27 @@ impl Drop for KeyboardCaptureGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn key_event_conversion() {
         // Test grid keys
         assert_eq!(KeyEvent::from_vk_code(0x51), Some(KeyEvent::GridKey('Q')));
         assert_eq!(KeyEvent::from_vk_code(0x41), Some(KeyEvent::GridKey('A')));
         assert_eq!(KeyEvent::from_vk_code(0x5A), Some(KeyEvent::GridKey('Z')));
-        
+
         // Test navigation keys
         assert_eq!(
-            KeyEvent::from_vk_code(0x25), 
+            KeyEvent::from_vk_code(0x25),
             Some(KeyEvent::Navigation(NavigationDirection::Left))
         );
         assert_eq!(
-            KeyEvent::from_vk_code(0x27), 
+            KeyEvent::from_vk_code(0x27),
             Some(KeyEvent::Navigation(NavigationDirection::Right))
         );
-        
+
         // Test cancel key
         assert_eq!(KeyEvent::from_vk_code(0x1B), Some(KeyEvent::Cancel));
-        
+
         // Test invalid key
         assert_eq!(KeyEvent::from_vk_code(0x01), None); // VK_LBUTTON
     }
@@ -324,10 +316,10 @@ mod tests {
     #[test]
     fn keyboard_capture_creation() {
         use windows::Win32::Foundation::HWND;
-        
+
         let hwnd = HWND(0); // Dummy HWND for testing
         let capture = KeyboardCapture::new(hwnd);
-        
+
         assert!(!capture.is_capturing());
         assert!(capture.hook.is_none());
     }

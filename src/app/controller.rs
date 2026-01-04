@@ -3,25 +3,16 @@
 //! The controller orchestrates between input, domain, UI, and platform layers.
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
-use std::sync::{ Arc, Mutex };
-use std::time::Duration;
-use crate::app::state::{ AppState, StateEvent, StateMachine, NavigationDirection };
-use crate::input::{ HotkeyManager, HotkeyError, HotkeyModifier, VirtualKey };
-use crate::input::{ KeyboardCaptureGuard, KeyboardCaptureError, KeyEvent };
-use crate::platform::monitors::{ enumerate_monitors, Monitor, MonitorError };
-use crate::platform::windows::get_foreground_window;
+use crate::app::state::{AppState, StateEvent, StateMachine};
 use crate::domain::grid::Grid;
-use crate::domain::selection::Selection;
-use crate::ui::{ OverlayManager, OverlayError };
+use crate::input::{HotkeyError, HotkeyManager, HotkeyModifier, VirtualKey};
+use crate::input::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard};
+use crate::platform::monitors::{enumerate_monitors, Monitor, MonitorError};
+use crate::ui::{OverlayError, OverlayManager};
+use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
-    MSG,
-    GetMessageW,
-    TranslateMessage,
-    DispatchMessageW,
-    PeekMessageW,
-    PM_REMOVE,
-    WM_QUIT,
+    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage, WM_QUIT,
 };
 
 /// Application errors that can occur during controller operations
@@ -106,15 +97,19 @@ impl HotkeyManagerGuard {
         })
     }
 
-    /// Register the main application hotkey (Ctrl+Shift+T for testing)
-    pub fn register_main_hotkey<F>(&mut self, callback: F) -> Result<(), AppError>
-        where F: Fn() + Send + Sync + 'static
+    /// Register the main application hotkey
+    pub fn register_main_hotkey<F>(
+        &mut self,
+        modifiers: &[HotkeyModifier],
+        key: VirtualKey,
+        callback: F,
+    ) -> Result<(), AppError>
+    where
+        F: Fn() + Send + Sync + 'static,
     {
-        let hotkey_id = self.manager.register_hotkey(
-            &[HotkeyModifier::Control, HotkeyModifier::Shift],
-            VirtualKey::T,
-            Arc::new(callback)
-        )?;
+        let hotkey_id = self
+            .manager
+            .register_hotkey(modifiers, key, Arc::new(callback))?;
 
         self.main_hotkey_id = Some(hotkey_id);
         Ok(())
@@ -301,13 +296,14 @@ impl AppController {
                     grids.push(grid);
                     println!(
                         "Monitor {}: Created 3x2 grid for {}x{} area",
-                        i,
-                        monitor.work_area.w,
-                        monitor.work_area.h
+                        i, monitor.work_area.w, monitor.work_area.h
                     );
                 }
                 Err(e) => {
-                    return Err(AppError::GridCreationFailed(format!("Monitor {}: {:?}", i, e)));
+                    return Err(AppError::GridCreationFailed(format!(
+                        "Monitor {}: {:?}",
+                        i, e
+                    )));
                 }
             }
         }
@@ -317,36 +313,24 @@ impl AppController {
         }
 
         // Initialize RAII-wrapped components
-        let mut hotkey_manager = HotkeyManagerGuard::new()?;
-        let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
+        // TEMPORARY: Skip hotkey manager for debugging overlay rendering
+        println!("AppController: Skipping hotkey registration for debugging");
+        let hotkey_manager = HotkeyManagerGuard::new()?;
+        let mut overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
         let keyboard_capture = KeyboardCaptureManager::new(main_window);
 
-        // Initialize with idle state
-        let state = Arc::new(Mutex::new(AppState::default()));
-        let state_for_callback = Arc::clone(&state);
+        // TEMPORARY: Start in selecting mode to immediately show overlays
+        println!("AppController: Starting in SELECTING mode for debugging");
+        let initial_state = AppState::Selecting(crate::app::state::SelectingState::new(0));
+        let state = Arc::new(Mutex::new(initial_state));
 
-        // Register main application hotkey  
-        // Note: The closure cannot access self, so we only update state here
-        // The main event loop will detect state changes and handle overlays
-        println!("AppController: Registering Ctrl+Shift+F12 hotkey...");
-        match hotkey_manager.register_main_hotkey(move || {
-            println!("=== HOTKEY PRESSED ===");
-            println!("HOTKEY TRIGGERED: Ctrl+Shift+F12 detected!");
-            // Create hotkey event and process it through state machine
-            let mut state_guard = state_for_callback.lock().unwrap();
-            let old_state = state_guard.clone();
-            println!("State before hotkey: {:?}", old_state);
-            let new_state = StateMachine::process_event(old_state, StateEvent::HotkeyPressed, 1);
-            println!("State after hotkey: {:?}", new_state);
-            *state_guard = new_state;
-            println!("=== HOTKEY PROCESSING COMPLETE ===");
-        }) {
-            Ok(()) => println!("AppController: Hotkey registered successfully"),
-            Err(e) => {
-                println!("AppController: Failed to register hotkey: {}", e);
-                return Err(e);
-            }
-        }
+        // Show overlays immediately
+        println!("AppController: Showing overlays at startup for verification");
+        overlay_manager.set_active_monitor(0);
+        overlay_manager.show_all();
+        // TEMPORARILY DISABLED: render_grids() uses UpdateLayeredWindow which conflicts with SetLayeredWindowAttributes
+        // overlay_manager.render_grids();
+        println!("AppController: Overlays should now be visible on all monitors");
 
         Ok(Self {
             state,
@@ -420,13 +404,13 @@ impl AppController {
                 // Show overlays when entering selection mode
                 self.overlay_manager.show_all();
                 println!("CONTROLLER: Overlays shown");
-            },
+            }
             (AppState::Selecting(_), AppState::Idle) => {
                 println!("CONTROLLER: Transitioning to Idle state - hiding overlays");
                 // Hide overlays when exiting selection mode
                 self.overlay_manager.hide_all();
                 println!("CONTROLLER: Overlays hidden");
-            },
+            }
             _ => {
                 // No UI changes needed for other transitions
             }
@@ -453,7 +437,8 @@ impl AppController {
                     selecting.active_monitor_index
                 );
                 // Show overlays and start keyboard capture
-                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
+                self.overlay_manager
+                    .set_active_monitor(selecting.active_monitor_index);
                 self.overlay_manager.show_all();
 
                 // Start keyboard capture
@@ -481,8 +466,7 @@ impl AppController {
                 if grid.contains_key(key) {
                     println!(
                         "Valid grid key: '{}' on monitor {}",
-                        key,
-                        selecting.active_monitor_index
+                        key, selecting.active_monitor_index
                     );
 
                     // Convert key to coordinates
@@ -536,7 +520,8 @@ impl AppController {
         if let AppState::Selecting(selecting) = new_state {
             println!("Switched to monitor {}", selecting.active_monitor_index);
             // Update overlay rendering to show new active monitor
-            self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
+            self.overlay_manager
+                .set_active_monitor(selecting.active_monitor_index);
             self.overlay_manager.render_grids();
         }
     }
@@ -603,14 +588,18 @@ impl AppController {
                 KeyEvent::Navigation(direction) => {
                     // Convert input navigation direction to app navigation direction
                     let app_direction = match direction {
-                        crate::input::NavigationDirection::Left =>
-                            crate::app::state::NavigationDirection::Left,
-                        crate::input::NavigationDirection::Right =>
-                            crate::app::state::NavigationDirection::Right,
-                        crate::input::NavigationDirection::Up =>
-                            crate::app::state::NavigationDirection::Up,
-                        crate::input::NavigationDirection::Down =>
-                            crate::app::state::NavigationDirection::Down,
+                        crate::input::NavigationDirection::Left => {
+                            crate::app::state::NavigationDirection::Left
+                        }
+                        crate::input::NavigationDirection::Right => {
+                            crate::app::state::NavigationDirection::Right
+                        }
+                        crate::input::NavigationDirection::Up => {
+                            crate::app::state::NavigationDirection::Up
+                        }
+                        crate::input::NavigationDirection::Down => {
+                            crate::app::state::NavigationDirection::Down
+                        }
                     };
                     self.handle_navigation(app_direction);
                 }
@@ -651,12 +640,9 @@ impl AppController {
 
     /// Main event loop for processing keyboard events and timeouts
     ///
-    /// This creates a proper Windows message pump that:
-    /// - Processes keyboard events from the hook
-    /// - Handles selection timeouts
-    /// - Coordinates all application components
+    /// TEMPORARY: Simplified version to just display overlays for debugging
     pub fn run(&mut self) -> Result<(), AppError> {
-        println!("AppController: Starting main event loop");
+        println!("AppController: Starting main event loop (DEBUG MODE)");
         println!(
             "Initialized with {} monitors and {} grids",
             self.monitors.len(),
@@ -675,25 +661,27 @@ impl AppController {
             );
         }
 
-        println!("Event loop started. Press Ctrl+Shift+F12 to activate tactile mode.");
+        println!("\n=== DEBUG MODE ===");
+        println!("Overlays should be visible on all monitors.");
+        println!("The app will stay open for 30 seconds to let you inspect the overlays.");
+        println!("Press Ctrl+C in the terminal to exit early.");
+        println!("==================\n");
 
-        // Track state for overlay management
-        let mut last_state = AppState::default();
+        // Simple wait loop - overlays stay visible
+        let start_time = std::time::Instant::now();
+        let debug_duration = std::time::Duration::from_secs(30);
 
-        // Main Windows message loop
         unsafe {
             let mut msg = MSG::default();
 
             loop {
-                // Check for state changes and handle overlay visibility
-                let current_state = self.get_state();
-                if !std::mem::discriminant(&last_state).eq(&std::mem::discriminant(&current_state)) {
-                    println!("STATE CHANGE DETECTED: {:?} -> {:?}", last_state, current_state);
-                    self.handle_state_transition(&last_state, &current_state);
-                    last_state = current_state;
+                // Check if debug time has elapsed
+                if start_time.elapsed() >= debug_duration {
+                    println!("\nDebug timeout reached. Exiting...");
+                    break;
                 }
 
-                // Check for Windows messages with timeout for periodic tasks
+                // Check for Windows messages (but don't require them)
                 let msg_result = PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE);
 
                 if msg_result.as_bool() {
@@ -701,25 +689,15 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
-                    } else if msg.message == Self::get_keyboard_message_id() {
-                        // Handle keyboard event from hook
-                        self.handle_keyboard_event(msg.wParam);
                     } else {
                         // Standard Windows message processing
                         TranslateMessage(&msg);
                         DispatchMessageW(&msg);
                     }
-                } else {
-                    // No messages available, handle periodic tasks
-
-                    // Check for selection timeout every loop iteration
-                    if self.check_timeout() {
-                        // Timeout was handled, continue
-                    }
-
-                    // Small sleep to prevent busy waiting (10ms)
-                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
+
+                // Small sleep to prevent busy waiting
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
 
