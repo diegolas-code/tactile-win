@@ -10,13 +10,15 @@ use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ enumerate_monitors, Monitor, MonitorError };
 use crate::ui::{ OverlayError, OverlayManager };
 use std::sync::{ Arc, Mutex };
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{ HWND, LPARAM, WPARAM };
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
     MSG,
     PM_REMOVE,
     PeekMessageW,
     TranslateMessage,
+    WM_APP,
+    WM_HOTKEY,
     WM_QUIT,
 };
 
@@ -315,33 +317,37 @@ impl AppController {
         }
 
         // Initialize RAII-wrapped components
-        // TEMPORARY: Skip hotkey manager for debugging overlay rendering
-        println!("AppController: Skipping hotkey registration for debugging");
-        let hotkey_manager = HotkeyManagerGuard::new()?;
+        println!("AppController: Creating hotkey manager...");
+        let mut hotkey_manager = HotkeyManagerGuard::new()?;
+        
+        // Register Ctrl+Shift+Win+T hotkey
+        let main_window_for_callback = main_window;
+        let hotkey_callback = move || {
+            println!("Hotkey callback executed!");
+            // Post custom message to main window to trigger state change
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+                let _ = PostMessageW(main_window_for_callback, WM_APP + 1, WPARAM(0), LPARAM(0));
+            }
+        };
+        
+        hotkey_manager.register_main_hotkey(
+            &[HotkeyModifier::Control, HotkeyModifier::Shift, HotkeyModifier::Windows],
+            VirtualKey::T,
+            hotkey_callback,
+        ).map_err(|e| {
+            eprintln!("Failed to register hotkey: {}", e);
+            e
+        })?;
+        println!("AppController: Hotkey registered (Ctrl+Shift+Win+T)");
+        
         let mut overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
         let keyboard_capture = KeyboardCaptureManager::new(main_window);
 
-        // TEMPORARY: Start in selecting mode to immediately show overlays
-        println!("AppController: Starting in SELECTING mode for debugging");
-        let initial_state = AppState::Selecting(crate::app::state::SelectingState::new(0));
+        // Start in idle mode - hotkey activates selection
+        println!("AppController: Starting in IDLE mode - press Ctrl+Shift+Win+T to activate");
+        let initial_state = AppState::Idle;
         let state = Arc::new(Mutex::new(initial_state));
-
-        // Show overlays immediately
-        println!("AppController: Showing overlays at startup for verification");
-        overlay_manager.set_active_monitor(0);
-        overlay_manager.show_all();
-        // TEMPORARILY DISABLED: render_grids() uses UpdateLayeredWindow which conflicts with SetLayeredWindowAttributes
-        // overlay_manager.render_grids();
-        println!("AppController: Overlays should now be visible on all monitors");
-
-        // Start keyboard capture for user input
-        let mut kb_capture = KeyboardCaptureManager::new(main_window);
-        if let Err(e) = kb_capture.start_capture() {
-            eprintln!("Failed to start keyboard capture: {}", e);
-            return Err(AppError::from(e));
-        }
-        println!("AppController: Keyboard capture started - ready for input");
-        let keyboard_capture = kb_capture;
 
         Ok(Self {
             state,
@@ -723,26 +729,25 @@ impl AppController {
             );
         }
 
-        println!("\n=== INTERACTIVE MODE ===");
-        println!("Grid overlay visible. Press keys to select cells:");
-        println!("  Q W E");
-        println!("  A S D");
-        println!("\nPress ESC to cancel or wait 30 seconds for timeout.");
+        println!("\n=== APPLICATION READY ===");
+        println!("Press Ctrl+Shift+Win+T to activate grid overlay");
         println!("========================\n");
 
         const WM_TACTILE_KEY_EVENT: u32 = 0x8000;
+        const WM_TACTILE_HOTKEY: u32 = WM_APP + 1; // Custom message for hotkey
 
         unsafe {
             let mut msg = MSG::default();
 
             loop {
-                // Check for selection timeout
-                self.check_timeout();
-                
-                // Check if we're still in selecting mode
-                if matches!(self.get_state(), AppState::Idle) {
-                    println!("Exited selecting mode, stopping event loop");
-                    break;
+                // Check for selection timeout if in selecting mode
+                if matches!(self.get_state(), AppState::Selecting(_)) {
+                    self.check_timeout();
+                    
+                    // Exit loop if we've returned to idle after timeout
+                    if matches!(self.get_state(), AppState::Idle) {
+                        continue;
+                    }
                 }
 
                 // Check for Windows messages
@@ -752,9 +757,12 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
+                    } else if msg.message == WM_TACTILE_HOTKEY {
+                        // Hotkey pressed - toggle state
+                        println!("Hotkey message received in main window");
+                        self.handle_hotkey();
                     } else if msg.message == WM_TACTILE_KEY_EVENT {
                         // Handle keyboard event from hook
-                        println!("Received keyboard event: vk_code={}", msg.wParam.0);
                         self.handle_keyboard_event(msg.wParam);
                     } else {
                         // Standard Windows message processing
