@@ -11,18 +11,17 @@ use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, BeginPaint,
-    CLIP_DEFAULT_PRECIS, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreatePen,
-    CreateSolidBrush, DEFAULT_CHARSET, DEFAULT_PITCH, DEFAULT_QUALITY, DIB_RGB_COLORS, DeleteDC,
-    DeleteObject, EndPaint, FF_DONTCARE, FW_BOLD, GetDC, HGDIOBJ, HPEN, InvalidateRect, LineTo,
-    MoveToEx, OUT_DEFAULT_PRECIS, PAINTSTRUCT, PS_SOLID, Rectangle, ReleaseDC, SelectObject,
-    SetBkMode, SetDCBrushColor, SetDCPenColor, SetTextColor, TRANSPARENT, TextOutW,
+    CLIP_DEFAULT_PRECIS, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush,
+    DEFAULT_CHARSET, DEFAULT_PITCH, DEFAULT_QUALITY, DIB_RGB_COLORS, DeleteDC, DeleteObject,
+    EndPaint, FF_DONTCARE, FW_BOLD, GetDC, HGDIOBJ, InvalidateRect, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT, ReleaseDC, SelectObject, SetBkMode, SetTextColor, TRANSPARENT, TextOutW,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, LWA_ALPHA,
-    LWA_COLORKEY, RegisterClassW, SW_HIDE, SW_SHOW, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    ShowWindow, ULW_ALPHA, UpdateLayeredWindow, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, LWA_ALPHA, RegisterClassW,
+    SW_HIDE, SW_SHOW, SetLayeredWindowAttributes, SetWindowLongPtrW, ShowWindow, ULW_ALPHA,
+    UpdateLayeredWindow, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::w;
 
@@ -110,7 +109,7 @@ impl OverlayWindow {
         // Configure transparency
         Self::configure_transparency(hwnd)?;
 
-        let mut overlay = Self {
+        let overlay = Self {
             hwnd,
             monitor_index,
             monitor_rect: monitor.work_area,
@@ -161,7 +160,7 @@ impl OverlayWindow {
                             SetTextColor(hdc, COLORREF(0x0000ffff)); // Yellow text
 
                             // Create a thicker white pen for visible grid lines
-                            use windows::Win32::Graphics::Gdi::{CreatePen, HPEN, PS_SOLID};
+                            use windows::Win32::Graphics::Gdi::{CreatePen, PS_SOLID};
                             let hpen = CreatePen(PS_SOLID, 3, COLORREF(0x00ffffff)); // 3 pixels thick, white
                             let old_pen = SelectObject(hdc, HGDIOBJ(hpen.0));
 
@@ -191,10 +190,10 @@ impl OverlayWindow {
                             let (rows, cols) = overlay.grid.dimensions();
                             let cell_width = cell_width as i32;
                             let cell_height = cell_height as i32;
+                            use windows::Win32::Graphics::Gdi::{LineTo, MoveToEx};
 
                             for col in 0..=cols {
                                 let x = (col as i32) * cell_width;
-                                use windows::Win32::Graphics::Gdi::{LineTo, MoveToEx};
                                 MoveToEx(hdc, x, 0, None);
                                 LineTo(hdc, x, (rows as i32) * cell_height);
                             }
@@ -202,7 +201,6 @@ impl OverlayWindow {
                             // Draw horizontal grid lines
                             for row in 0..=rows {
                                 let y = (row as i32) * cell_height;
-                                use windows::Win32::Graphics::Gdi::{LineTo, MoveToEx};
                                 MoveToEx(hdc, 0, y, None);
                                 LineTo(hdc, (cols as i32) * cell_width, y);
                             }

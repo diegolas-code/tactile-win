@@ -312,7 +312,10 @@ mod tests {
         assert_eq!(KeyEvent::from_vk_code(0x1b), Some(KeyEvent::Cancel));
 
         // Test invalid key
-        assert_eq!(KeyEvent::from_vk_code(0x01), None); // VK_LBUTTON
+        assert_eq!(
+            KeyEvent::from_vk_code(0x01),
+            Some(KeyEvent::Invalid(0x01))
+        ); // VK_LBUTTON
     }
 
     #[test]
