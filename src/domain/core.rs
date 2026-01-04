@@ -26,7 +26,7 @@ impl Rect {
         self.x + self.w
     }
 
-    /// Returns the bottom edge coordinate  
+    /// Returns the bottom edge coordinate
     pub fn bottom(&self) -> i32 {
         self.y + self.h
     }

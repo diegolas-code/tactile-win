@@ -55,12 +55,12 @@ impl SelectingState {
     /// # Returns
     /// Seconds remaining before automatic timeout
     pub fn remaining_timeout(&self) -> u64 {
-        30_u64.saturating_sub(self.selection_started.elapsed().as_secs())
+        (30_u64).saturating_sub(self.selection_started.elapsed().as_secs())
     }
 
     /// Switches to a different monitor during selection
     ///
-    /// # Arguments  
+    /// # Arguments
     /// * `monitor_index` - Index of monitor to switch to
     pub fn switch_monitor(&mut self, monitor_index: usize) {
         self.active_monitor_index = monitor_index;
@@ -122,7 +122,7 @@ impl StateMachine {
     pub fn process_event(
         current_state: AppState,
         event: StateEvent,
-        monitor_count: usize,
+        monitor_count: usize
     ) -> AppState {
         match (current_state, event) {
             // From Idle state
@@ -215,7 +215,7 @@ mod tests {
         let state = StateMachine::process_event(
             AppState::Idle,
             StateEvent::HotkeyPressed,
-            2, // 2 monitors
+            2 // 2 monitors
         );
 
         assert!(matches!(state, AppState::Selecting(_)));
@@ -233,7 +233,7 @@ mod tests {
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3, // 3 monitors
+            3 // 3 monitors
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -252,7 +252,7 @@ mod tests {
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3, // 3 monitors (indices 0, 1, 2)
+            3 // 3 monitors (indices 0, 1, 2)
         );
 
         if let AppState::Selecting(selecting) = new_state {

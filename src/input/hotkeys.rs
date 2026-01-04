@@ -4,20 +4,34 @@
 //! for event handling. Follows RAII patterns for automatic cleanup.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{ AtomicBool, AtomicU32, Ordering };
+use std::sync::{ Arc, Mutex };
+use std::thread::{ self, JoinHandle };
+use std::time::{ Duration, Instant };
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{ HWND, LPARAM, LRESULT, WPARAM };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    HOT_KEY_MODIFIERS, RegisterHotKey, UnregisterHotKey,
+    HOT_KEY_MODIFIERS,
+    RegisterHotKey,
+    UnregisterHotKey,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW,
-    GetWindowLongPtrW, MSG, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, WM_DESTROY,
-    WM_HOTKEY, WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW,
+    DefWindowProcW,
+    DestroyWindow,
+    DispatchMessageW,
+    GWLP_USERDATA,
+    GetMessageW,
+    GetWindowLongPtrW,
+    MSG,
+    PostQuitMessage,
+    RegisterClassW,
+    SetWindowLongPtrW,
+    WM_DESTROY,
+    WM_HOTKEY,
+    WNDCLASSW,
+    WS_OVERLAPPED,
 };
 use windows::core::w;
 
@@ -36,7 +50,7 @@ pub enum VirtualKey {
     Tab = 0x09, // Tab key
     Space = 0x20,
     T = 0x54, // Letter T
-    Oem3 = 0xC0, // Backtick / tilde key
+    Oem3 = 0xc0, // Backtick / tilde key
     F1 = 0x70,
     F2 = 0x71,
     F3 = 0x72,
@@ -47,8 +61,8 @@ pub enum VirtualKey {
     F8 = 0x77,
     F9 = 0x78,
     F10 = 0x79,
-    F11 = 0x7A,
-    F12 = 0x7B,
+    F11 = 0x7a,
+    F12 = 0x7b,
 }
 
 /// Hotkey registration errors
@@ -60,11 +74,11 @@ pub enum HotkeyError {
     #[error("Failed to create message window")]
     MessageWindowCreationFailed,
 
-    #[error("Failed to register hotkey: {0}")]
-    HotkeyRegistrationFailed(String),
+    #[error("Failed to register hotkey: {0}")] HotkeyRegistrationFailed(String),
 
-    #[error("Failed to unregister hotkey: {id}")]
-    HotkeyUnregistrationFailed { id: u32 },
+    #[error("Failed to unregister hotkey: {id}")] HotkeyUnregistrationFailed {
+        id: u32,
+    },
 
     #[error("Hotkey manager already running")]
     AlreadyRunning,
@@ -145,8 +159,7 @@ impl HotkeyManager {
         let deadline = Instant::now() + Duration::from_millis(500);
         loop {
             {
-                let guard = self
-                    .window_handle
+                let guard = self.window_handle
                     .lock()
                     .map_err(|_| HotkeyError::MessageWindowCreationFailed)?;
                 if guard.is_some() {
@@ -199,49 +212,47 @@ impl HotkeyManager {
         &self,
         modifiers: &[HotkeyModifier],
         key: VirtualKey,
-        callback: HotkeyCallback,
+        callback: HotkeyCallback
     ) -> Result<u32, HotkeyError> {
         // Calculate modifier mask
-        let modifier_mask = modifiers
-            .iter()
-            .fold(0u32, |acc, &modifier| acc | modifier as u32);
+        let modifier_mask = modifiers.iter().fold(0u32, |acc, &modifier| acc | (modifier as u32));
 
         // Get next available ID
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         // Get window handle
         let hwnd = {
-            let guard = self
-                .window_handle
+            let guard = self.window_handle
                 .lock()
                 .map_err(|_| HotkeyError::HotkeyRegistrationFailed("Lock failed".to_string()))?;
-            (*guard)
-                .ok_or_else(|| HotkeyError::HotkeyRegistrationFailed("No window".to_string()))?
+            (*guard).ok_or_else(|| HotkeyError::HotkeyRegistrationFailed("No window".to_string()))?
         };
 
         // Register with Win32
         let result = unsafe {
-            RegisterHotKey(
-                hwnd,
-                id as i32,
-                HOT_KEY_MODIFIERS(modifier_mask),
-                key as u32,
-            )
+            RegisterHotKey(hwnd, id as i32, HOT_KEY_MODIFIERS(modifier_mask), key as u32)
         };
 
         if result.is_ok() {
             // Store callback
-            let mut hotkeys = self.hotkeys.lock().map_err(|_| {
-                HotkeyError::HotkeyRegistrationFailed("Callback storage failed".to_string())
-            })?;
+            let mut hotkeys = self.hotkeys
+                .lock()
+                .map_err(|_| {
+                    HotkeyError::HotkeyRegistrationFailed("Callback storage failed".to_string())
+                })?;
             hotkeys.insert(id, callback);
 
             Ok(id)
         } else {
-            Err(HotkeyError::HotkeyRegistrationFailed(format!(
-                "Win32 RegisterHotKey failed for key {:?} with modifiers {:?}",
-                key, modifiers
-            )))
+            Err(
+                HotkeyError::HotkeyRegistrationFailed(
+                    format!(
+                        "Win32 RegisterHotKey failed for key {:?} with modifiers {:?}",
+                        key,
+                        modifiers
+                    )
+                )
+            )
         }
     }
 
@@ -249,8 +260,7 @@ impl HotkeyManager {
     pub fn unregister_hotkey(&self, id: u32) -> Result<(), HotkeyError> {
         // Get window handle
         let hwnd = {
-            let guard = self
-                .window_handle
+            let guard = self.window_handle
                 .lock()
                 .map_err(|_| HotkeyError::HotkeyUnregistrationFailed { id })?;
             (*guard).ok_or_else(|| HotkeyError::HotkeyUnregistrationFailed { id })?
@@ -261,8 +271,7 @@ impl HotkeyManager {
 
         if result.is_ok() {
             // Remove callback
-            let mut hotkeys = self
-                .hotkeys
+            let mut hotkeys = self.hotkeys
                 .lock()
                 .map_err(|_| HotkeyError::HotkeyUnregistrationFailed { id })?;
             hotkeys.remove(&id);
@@ -282,7 +291,7 @@ impl HotkeyManager {
     fn message_loop_thread(
         shutdown: Arc<AtomicBool>,
         window_handle: Arc<Mutex<Option<HWND>>>,
-        hotkeys: Arc<Mutex<HashMap<u32, HotkeyCallback>>>,
+        hotkeys: Arc<Mutex<HashMap<u32, HotkeyCallback>>>
     ) -> Result<(), HotkeyError> {
         // Create message-only window
         let hwnd = Self::create_message_window(&hotkeys)?;
@@ -332,7 +341,7 @@ impl HotkeyManager {
 
     /// Create message-only window for hotkey events
     fn create_message_window(
-        hotkeys: &Arc<Mutex<HashMap<u32, HotkeyCallback>>>,
+        hotkeys: &Arc<Mutex<HashMap<u32, HotkeyCallback>>>
     ) -> Result<HWND, HotkeyError> {
         let class_name = w!("TactileWinHotkeyWindow");
 
@@ -341,7 +350,7 @@ impl HotkeyManager {
             hwnd: HWND,
             msg: u32,
             wparam: WPARAM,
-            lparam: LPARAM,
+            lparam: LPARAM
         ) -> LRESULT {
             match msg {
                 WM_HOTKEY => {
@@ -349,8 +358,9 @@ impl HotkeyManager {
 
                     // Get the hotkeys map from window user data
                     let hotkeys_ptr = unsafe {
-                        GetWindowLongPtrW(hwnd, GWLP_USERDATA)
-                            as *const Arc<Mutex<HashMap<u32, HotkeyCallback>>>
+                        GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Arc<
+                            Mutex<HashMap<u32, HotkeyCallback>>
+                        >
                     };
 
                     if !hotkeys_ptr.is_null() {
@@ -373,7 +383,7 @@ impl HotkeyManager {
                     }
                     LRESULT(0)
                 }
-                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
             }
         }
 
@@ -406,7 +416,7 @@ impl HotkeyManager {
                 None, // HWND_MESSAGE would be ideal but isn't easily available
                 None,
                 hinstance,
-                None,
+                None
             )
         };
 
@@ -471,7 +481,7 @@ mod tests {
         let result = manager.register_hotkey(
             &[HotkeyModifier::Control, HotkeyModifier::Alt],
             VirtualKey::F12,
-            callback,
+            callback
         );
 
         // In test environment, registration might fail due to conflicts

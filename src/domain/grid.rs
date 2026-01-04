@@ -4,13 +4,16 @@
 //! It maps grid coordinates to screen rectangles and validates grid configurations.
 
 use crate::domain::core::Rect;
-use crate::domain::keyboard::{GridCoords, QwertyLayout};
+use crate::domain::keyboard::{ GridCoords, QwertyLayout };
 
 /// Errors that can occur during grid operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GridError {
     /// Grid dimensions are invalid (zero or negative)
-    InvalidDimensions { rows: u32, cols: u32 },
+    InvalidDimensions {
+        rows: u32,
+        cols: u32,
+    },
     /// Screen area is too small for minimum cell requirements
     ScreenTooSmall {
         screen_width: u32,
@@ -25,7 +28,10 @@ pub enum GridError {
         max_col: u32,
     },
     /// Calculated cell dimensions would be invalid
-    InvalidCellSize { width: u32, height: u32 },
+    InvalidCellSize {
+        width: u32,
+        height: u32,
+    },
 }
 
 /// Represents a logical grid that can be overlaid on a screen area
@@ -104,8 +110,9 @@ impl Grid {
         }
 
         // Create keyboard layout for this grid
-        let keyboard_layout = QwertyLayout::new(cols, rows)
-            .map_err(|_| GridError::InvalidDimensions { rows, cols })?;
+        let keyboard_layout = QwertyLayout::new(cols, rows).map_err(
+            |_| GridError::InvalidDimensions { rows, cols }
+        )?;
 
         Ok(Self {
             rows,
@@ -155,13 +162,11 @@ impl Grid {
         }
 
         // Use the keyboard layout to find the key
-        self.keyboard_layout
-            .coords_to_key(coords)
-            .map_err(|_| GridError::InvalidCoordinates {
-                coords,
-                max_row: self.rows - 1,
-                max_col: self.cols - 1,
-            })
+        self.keyboard_layout.coords_to_key(coords).map_err(|_| GridError::InvalidCoordinates {
+            coords,
+            max_row: self.rows - 1,
+            max_col: self.cols - 1,
+        })
     }
 
     /// Converts grid coordinates to screen rectangle
@@ -193,15 +198,10 @@ impl Grid {
         }
 
         // Calculate cell position
-        let x = self.screen_area.x + (coords.col * self.cell_width) as i32;
-        let y = self.screen_area.y + (coords.row * self.cell_height) as i32;
+        let x = self.screen_area.x + ((coords.col * self.cell_width) as i32);
+        let y = self.screen_area.y + ((coords.row * self.cell_height) as i32);
 
-        Ok(Rect::new(
-            x,
-            y,
-            self.cell_width as i32,
-            self.cell_height as i32,
-        ))
+        Ok(Rect::new(x, y, self.cell_width as i32, self.cell_height as i32))
     }
 
     /// Converts a keyboard key to the corresponding cell rectangle
@@ -222,14 +222,13 @@ impl Grid {
     /// let w_rect = grid.key_to_rect('W')?;  // Top-middle cell
     /// ```
     pub fn key_to_rect(&self, key: char) -> Result<Rect, GridError> {
-        let coords =
-            self.keyboard_layout
-                .key_to_coords(key)
-                .map_err(|_| GridError::InvalidCoordinates {
-                    coords: GridCoords::new(0, 0), // Placeholder - real coords unknown
-                    max_row: self.rows - 1,
-                    max_col: self.cols - 1,
-                })?;
+        let coords = self.keyboard_layout
+            .key_to_coords(key)
+            .map_err(|_| GridError::InvalidCoordinates {
+                coords: GridCoords::new(0, 0), // Placeholder - real coords unknown
+                max_row: self.rows - 1,
+                max_col: self.cols - 1,
+            })?;
 
         self.cell_rect(coords)
     }
@@ -272,13 +271,11 @@ impl Grid {
     /// # Returns
     /// Grid coordinates for the key or GridError if key is invalid
     pub fn key_to_coords(&self, key: char) -> Result<GridCoords, GridError> {
-        self.keyboard_layout
-            .key_to_coords(key)
-            .map_err(|_| GridError::InvalidCoordinates {
-                coords: GridCoords::new(0, 0), // Placeholder
-                max_row: self.rows - 1,
-                max_col: self.cols - 1,
-            })
+        self.keyboard_layout.key_to_coords(key).map_err(|_| GridError::InvalidCoordinates {
+            coords: GridCoords::new(0, 0), // Placeholder
+            max_row: self.rows - 1,
+            max_col: self.cols - 1,
+        })
     }
 
     /// Creates a bounding rectangle from two grid coordinates
@@ -288,7 +285,7 @@ impl Grid {
     ///
     /// # Arguments
     /// * `start` - First grid coordinate
-    /// * `end` - Second grid coordinate  
+    /// * `end` - Second grid coordinate
     ///
     /// # Returns
     /// Screen rectangle covering both coordinates or GridError if invalid
@@ -336,15 +333,10 @@ impl Grid {
         let selection_height = selection_rows * self.cell_height;
 
         // Calculate top-left position
-        let x = self.screen_area.x + (min_col * self.cell_width) as i32;
-        let y = self.screen_area.y + (min_row * self.cell_height) as i32;
+        let x = self.screen_area.x + ((min_col * self.cell_width) as i32);
+        let y = self.screen_area.y + ((min_row * self.cell_height) as i32);
 
-        Ok(Rect::new(
-            x,
-            y,
-            selection_width as i32,
-            selection_height as i32,
-        ))
+        Ok(Rect::new(x, y, selection_width as i32, selection_height as i32))
     }
 
     /// Creates a bounding rectangle from two keyboard keys
@@ -414,17 +406,11 @@ mod tests {
 
         // Zero rows
         let result = Grid::new(0, 2, screen);
-        assert!(matches!(
-            result,
-            Err(GridError::InvalidDimensions { rows: 0, cols: 2 })
-        ));
+        assert!(matches!(result, Err(GridError::InvalidDimensions { rows: 0, cols: 2 })));
 
         // Zero columns
         let result = Grid::new(3, 0, screen);
-        assert!(matches!(
-            result,
-            Err(GridError::InvalidDimensions { rows: 3, cols: 0 })
-        ));
+        assert!(matches!(result, Err(GridError::InvalidDimensions { rows: 3, cols: 0 })));
     }
 
     #[test]

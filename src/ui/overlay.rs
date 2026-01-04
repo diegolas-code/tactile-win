@@ -6,30 +6,84 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::{Arc, Mutex};
+use std::sync::{ Arc, Mutex };
 
-use windows::Win32::Foundation::{COLORREF, POINT, SIZE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{ COLORREF, POINT, SIZE, HWND, LPARAM, LRESULT, WPARAM };
 use windows::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
-    CreateCompatibleDC, CreateDIBSection, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC, DeleteObject,
-    GetDC, HGDIOBJ, ReleaseDC, SelectObject, BeginPaint, EndPaint, PAINTSTRUCT,
-    SetDCBrushColor, SetDCPenColor, Rectangle, TextOutW, SetBkMode, SetTextColor, TRANSPARENT,
-    CreateFontW, FW_BOLD, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-    DEFAULT_QUALITY, DEFAULT_PITCH, FF_DONTCARE,
+    AC_SRC_ALPHA,
+    AC_SRC_OVER,
+    BI_RGB,
+    BITMAPINFO,
+    BITMAPINFOHEADER,
+    BLENDFUNCTION,
+    CreateCompatibleDC,
+    CreateDIBSection,
+    CreateSolidBrush,
+    DIB_RGB_COLORS,
+    DeleteDC,
+    DeleteObject,
+    GetDC,
+    HGDIOBJ,
+    ReleaseDC,
+    SelectObject,
+    BeginPaint,
+    EndPaint,
+    PAINTSTRUCT,
+    SetDCBrushColor,
+    SetDCPenColor,
+    Rectangle,
+    TextOutW,
+    SetBkMode,
+    SetTextColor,
+    TRANSPARENT,
+    CreateFontW,
+    FW_BOLD,
+    DEFAULT_CHARSET,
+    OUT_DEFAULT_PRECIS,
+    CLIP_DEFAULT_PRECIS,
+    DEFAULT_QUALITY,
+    DEFAULT_PITCH,
+    FF_DONTCARE,
+    MoveToEx,
+    LineTo,
+    InvalidateRect,
+    CreatePen,
+    PS_SOLID,
+    HPEN,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, LWA_ALPHA, LWA_COLORKEY, RegisterClassW, SW_HIDE, SW_SHOW,
-    SetLayeredWindowAttributes, ShowWindow, ULW_ALPHA, UpdateLayeredWindow,
-    WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW,
+    DefWindowProcW,
+    DestroyWindow,
+    LWA_ALPHA,
+    LWA_COLORKEY,
+    RegisterClassW,
+    SW_HIDE,
+    SW_SHOW,
+    SetLayeredWindowAttributes,
+    ShowWindow,
+    ULW_ALPHA,
+    UpdateLayeredWindow,
+    WM_DESTROY,
+    WM_PAINT,
+    WNDCLASSW,
+    WS_EX_LAYERED,
+    WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT,
+    WS_POPUP,
+    GWLP_USERDATA,
+    SetWindowLongPtrW,
+    GetWindowLongPtrW,
 };
 use windows::core::w;
 
 use crate::domain::core::Rect;
 use crate::domain::grid::Grid;
 use crate::platform::monitors::Monitor;
-use crate::ui::renderer::{GridLayout, GridRenderer, RendererError};
+use crate::ui::renderer::{ GridLayout, GridRenderer, RendererError };
 
 /// Overlay management errors
 #[derive(Debug, thiserror::Error)]
@@ -37,8 +91,9 @@ pub enum OverlayError {
     #[error("Failed to register overlay window class")]
     WindowClassRegistrationFailed,
 
-    #[error("Failed to create overlay window for monitor {monitor_index}")]
-    WindowCreationFailed { monitor_index: usize },
+    #[error("Failed to create overlay window for monitor {monitor_index}")] WindowCreationFailed {
+        monitor_index: usize,
+    },
 
     #[error("Failed to configure overlay transparency")]
     TransparencyConfigurationFailed,
@@ -61,8 +116,7 @@ pub enum OverlayError {
     #[error("Overlay manager not initialized")]
     NotInitialized,
 
-    #[error("Rendering failed: {0}")]
-    RenderingError(#[from] RendererError),
+    #[error("Rendering failed: {0}")] RenderingError(#[from] RendererError),
 }
 
 /// Overlay window for a single monitor
@@ -110,7 +164,7 @@ impl OverlayWindow {
         // Configure transparency
         Self::configure_transparency(hwnd)?;
 
-        Ok(Self {
+        let mut overlay = Self {
             hwnd,
             monitor_index,
             monitor_rect: monitor.work_area,
@@ -120,7 +174,15 @@ impl OverlayWindow {
             is_active: false,
             cached_pixmap: None,
             renderer: GridRenderer::new(),
-        })
+        };
+
+        // Store pointer to self in window user data for access from WM_PAINT
+        unsafe {
+            use windows::Win32::UI::WindowsAndMessaging::{ SetWindowLongPtrW, GWLP_USERDATA };
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, &overlay as *const _ as isize);
+        }
+
+        Ok(overlay)
     }
 
     /// Register overlay window class
@@ -130,64 +192,115 @@ impl OverlayWindow {
             hwnd: HWND,
             msg: u32,
             wparam: WPARAM,
-            lparam: LPARAM,
+            lparam: LPARAM
         ) -> LRESULT {
             match msg {
                 WM_PAINT => {
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GetWindowLongPtrW,
+                        GWLP_USERDATA,
+                    };
+
                     unsafe {
                         let mut ps = PAINTSTRUCT::default();
                         let hdc = BeginPaint(hwnd, &mut ps);
-                        
-                        // Set up drawing context
-                        SetBkMode(hdc, TRANSPARENT);
-                        SetTextColor(hdc, COLORREF(0x0000FFFF)); // Bright yellow (BGR: 00FFFF00 but displayed as yellow)
-                        SetDCPenColor(hdc, COLORREF(0x00FFFFFF)); // White pen
-                        SetDCBrushColor(hdc, COLORREF(0x00000000)); // Transparent brush
-                        
-                        // Create a large font for visibility
-                        let font_name: Vec<u16> = "Arial\0".encode_utf16().collect();
-                        let hfont = CreateFontW(
-                            72, // Height (even larger for testing)
-                            0,  // Width (auto)
-                            0,  // Escapement
-                            0,  // Orientation
-                            FW_BOLD.0 as i32,
-                            0,  // Italic
-                            0,  // Underline
-                            0,  // StrikeOut
-                            DEFAULT_CHARSET.0 as u32,
-                            OUT_DEFAULT_PRECIS.0 as u32,
-                            CLIP_DEFAULT_PRECIS.0 as u32,
-                            DEFAULT_QUALITY.0 as u32,
-                            (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
-                            windows::core::PCWSTR(font_name.as_ptr()),
-                        );
-                        let old_font = SelectObject(hdc, HGDIOBJ(hfont.0));
-                        
-                        // Draw test rectangle
-                        Rectangle(hdc, 100, 500, 300, 600);
-                        
-                        // Draw test text (Q, W, E for grid keys) - positioned higher up
-                        let text_q: Vec<u16> = "Q\0".encode_utf16().collect();
-                        let text_w: Vec<u16> = "W\0".encode_utf16().collect();
-                        let text_e: Vec<u16> = "E\0".encode_utf16().collect();
-                        
-                        TextOutW(hdc, 150, 100, &text_q);
-                        TextOutW(hdc, 350, 100, &text_w);
-                        TextOutW(hdc, 550, 100, &text_e);
-                        
-                        // Restore old font and clean up
-                        SelectObject(hdc, old_font);
-                        DeleteObject(HGDIOBJ(hfont.0));
-                        
+
+                        // Try to get the overlay window pointer from user data
+                        let overlay_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+
+                        if overlay_ptr != 0 {
+                            let overlay = &*(overlay_ptr as *const OverlayWindow);
+
+                            // Set up drawing context
+                            SetBkMode(hdc, TRANSPARENT);
+                            SetTextColor(hdc, COLORREF(0x0000ffff)); // Yellow text
+
+                            // Create a thicker white pen for visible grid lines
+                            use windows::Win32::Graphics::Gdi::{ CreatePen, PS_SOLID, HPEN };
+                            let hpen = CreatePen(PS_SOLID, 3, COLORREF(0x00ffffff)); // 3 pixels thick, white
+                            let old_pen = SelectObject(hdc, HGDIOBJ(hpen.0));
+
+                            // Create font for grid letters
+                            let (cell_width, cell_height) = overlay.grid.cell_size();
+                            let font_name: Vec<u16> = "Arial\0".encode_utf16().collect();
+                            let font_height = (cell_height / 2) as i32; // Half cell height
+                            let hfont = CreateFontW(
+                                font_height,
+                                0,
+                                0,
+                                0,
+                                FW_BOLD.0 as i32,
+                                0,
+                                0,
+                                0,
+                                DEFAULT_CHARSET.0 as u32,
+                                OUT_DEFAULT_PRECIS.0 as u32,
+                                CLIP_DEFAULT_PRECIS.0 as u32,
+                                DEFAULT_QUALITY.0 as u32,
+                                (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+                                windows::core::PCWSTR(font_name.as_ptr())
+                            );
+                            let old_font = SelectObject(hdc, HGDIOBJ(hfont.0));
+
+                            // Draw vertical grid lines
+                            let (rows, cols) = overlay.grid.dimensions();
+                            let cell_width = cell_width as i32;
+                            let cell_height = cell_height as i32;
+
+                            for col in 0..=cols {
+                                let x = (col as i32) * cell_width;
+                                use windows::Win32::Graphics::Gdi::{ MoveToEx, LineTo };
+                                MoveToEx(hdc, x, 0, None);
+                                LineTo(hdc, x, (rows as i32) * cell_height);
+                            }
+
+                            // Draw horizontal grid lines
+                            for row in 0..=rows {
+                                let y = (row as i32) * cell_height;
+                                use windows::Win32::Graphics::Gdi::{ MoveToEx, LineTo };
+                                MoveToEx(hdc, 0, y, None);
+                                LineTo(hdc, (cols as i32) * cell_width, y);
+                            }
+
+                            // Draw letters in cells (if active monitor)
+                            if overlay.is_active {
+                                use crate::domain::keyboard::GridCoords;
+                                let layout = overlay.grid.keyboard_layout();
+                                for row in 0..rows {
+                                    for col in 0..cols {
+                                        let coords = GridCoords::new(row, col);
+                                        if let Ok(key) = layout.coords_to_key(coords) {
+                                            let center_x =
+                                                (col as i32) * cell_width +
+                                                cell_width / 2 -
+                                                font_height / 3;
+                                            let center_y =
+                                                (row as i32) * cell_height +
+                                                cell_height / 2 -
+                                                font_height / 3;
+
+                                            let text: Vec<u16> = format!("{}\0", key)
+                                                .encode_utf16()
+                                                .collect();
+                                            TextOutW(hdc, center_x, center_y, &text);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Restore and cleanup
+                            SelectObject(hdc, old_font);
+                            DeleteObject(HGDIOBJ(hfont.0));
+                            SelectObject(hdc, old_pen);
+                            DeleteObject(HGDIOBJ(hpen.0));
+                        }
+
                         EndPaint(hwnd, &ps);
                     }
                     LRESULT(0)
                 }
-                WM_DESTROY => {
-                    LRESULT(0)
-                }
-                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+                WM_DESTROY => { LRESULT(0) }
+                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
             }
         }
 
@@ -216,17 +329,17 @@ impl OverlayWindow {
     /// Create the actual overlay window
     fn create_overlay_window(
         class_name: windows::core::PCWSTR,
-        monitor_rect: &Rect,
+        monitor_rect: &Rect
     ) -> Result<HWND, OverlayError> {
         let hinstance = unsafe { GetModuleHandleW(None).unwrap() };
 
         let hwnd = unsafe {
             CreateWindowExW(
-                WS_EX_LAYERED
-                    | WS_EX_TOPMOST
-                    | WS_EX_NOACTIVATE
-                    | WS_EX_TOOLWINDOW
-                    | WS_EX_TRANSPARENT,
+                WS_EX_LAYERED |
+                    WS_EX_TOPMOST |
+                    WS_EX_NOACTIVATE |
+                    WS_EX_TOOLWINDOW |
+                    WS_EX_TRANSPARENT,
                 class_name,
                 w!("Tactile Overlay"),
                 WS_POPUP, // Popup window with no frame
@@ -237,7 +350,7 @@ impl OverlayWindow {
                 None, // No parent
                 None, // No menu
                 hinstance,
-                None,
+                None
             )
         };
 
@@ -256,7 +369,7 @@ impl OverlayWindow {
                 hwnd,
                 COLORREF(0), // Not used when only LWA_ALPHA is set
                 180, // Alpha value (0-255, 180 = ~70% opaque for visibility)
-                LWA_ALPHA, // Only alpha blending, no color key
+                LWA_ALPHA // Only alpha blending, no color key
             )
         };
 
@@ -271,7 +384,11 @@ impl OverlayWindow {
     pub fn show(&mut self) {
         if !self.visible {
             unsafe {
+                // Update window user data pointer before showing
+                SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, self as *const _ as isize);
                 ShowWindow(self.hwnd, SW_SHOW);
+                // Trigger initial paint
+                InvalidateRect(self.hwnd, None, false);
             }
             self.visible = true;
         }
@@ -297,6 +414,17 @@ impl OverlayWindow {
         if self.is_active != active {
             self.is_active = active;
             self.cached_pixmap = None;
+
+            // Update window user data pointer (in case self moved in memory)
+            unsafe {
+                SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, self as *const _ as isize);
+            }
+
+            // Trigger repaint to show/hide letters
+            unsafe {
+                use windows::Win32::Graphics::Gdi::InvalidateRect;
+                InvalidateRect(self.hwnd, None, false);
+            }
         }
     }
 
@@ -312,7 +440,7 @@ impl OverlayWindow {
             &self.grid,
             self.monitor_rect,
             self.is_active,
-            self.dpi_scale,
+            self.dpi_scale
         );
 
         // Render to pixmap
@@ -358,14 +486,9 @@ impl OverlayWindow {
             };
 
             let mut pixel_ptr: *mut c_void = std::ptr::null_mut();
-            let dib = match CreateDIBSection(
-                memory_dc,
-                &bitmap_info,
-                DIB_RGB_COLORS,
-                &mut pixel_ptr,
-                None,
-                0,
-            ) {
+            let dib = match
+                CreateDIBSection(memory_dc, &bitmap_info, DIB_RGB_COLORS, &mut pixel_ptr, None, 0)
+            {
                 Ok(bitmap) => bitmap,
                 Err(_) => {
                     DeleteDC(memory_dc);
@@ -421,7 +544,7 @@ impl OverlayWindow {
                 Some(&src_point),
                 COLORREF(0),
                 Some(&blend),
-                ULW_ALPHA,
+                ULW_ALPHA
             );
 
             // Clean up GDI objects
@@ -583,10 +706,7 @@ impl OverlayManager {
         let mut overlays = self.overlays.lock().unwrap();
         for overlay in overlays.values_mut() {
             if let Err(err) = overlay.render_grid() {
-                eprintln!(
-                    "Overlay rendering failed on monitor {}: {}",
-                    overlay.monitor_index, err
-                );
+                eprintln!("Overlay rendering failed on monitor {}: {}", overlay.monitor_index, err);
             }
         }
     }

@@ -2,7 +2,7 @@
 //!
 //! This module handles:
 //! - Getting the currently active window
-//! - Checking if a window is resizable  
+//! - Checking if a window is resizable
 //! - Moving and resizing windows to specific rectangles
 //! - Preserving focus during window operations
 //!
@@ -97,7 +97,7 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo, WindowError> {
             window_rect.left,
             window_rect.top,
             window_rect.right - window_rect.left,
-            window_rect.bottom - window_rect.top,
+            window_rect.bottom - window_rect.top
         );
 
         // Check if window is resizable by examining its style
@@ -114,7 +114,7 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo, WindowError> {
         };
 
         let is_maximized = if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-            placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
+            placement.showCmd == (SW_SHOWMAXIMIZED.0 as u32)
         } else {
             false
         };
@@ -169,7 +169,7 @@ pub fn position_window(hwnd: HWND, target_rect: Rect) -> Result<(), WindowError>
             target_rect.y,
             target_rect.w,
             target_rect.h,
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_NOACTIVATE | SWP_NOZORDER
         );
 
         if result.is_err() {
@@ -193,7 +193,7 @@ pub fn position_active_window(target_rect: Rect) -> Result<(), WindowError> {
 ///
 /// Returns false for:
 /// - Non-resizable windows (dialogs, etc.)
-/// - Child windows  
+/// - Child windows
 /// - System windows
 pub fn is_window_suitable_for_positioning(hwnd: HWND) -> bool {
     match get_window_info(hwnd) {

@@ -2,7 +2,7 @@
 //!
 //! This module is responsible for:
 //! - Enumerating all connected monitors
-//! - Getting DPI information for each monitor  
+//! - Getting DPI information for each monitor
 //! - Converting logical coordinates to real pixels
 //! - Providing work area information (excluding taskbar)
 //!
@@ -42,10 +42,10 @@ impl Monitor {
         grid_cols: u32,
         grid_rows: u32,
         min_cell_width: i32,
-        min_cell_height: i32,
+        min_cell_height: i32
     ) -> bool {
-        let cell_width = self.work_area.w / grid_cols as i32;
-        let cell_height = self.work_area.h / grid_rows as i32;
+        let cell_width = self.work_area.w / (grid_cols as i32);
+        let cell_height = self.work_area.h / (grid_rows as i32);
 
         cell_width >= min_cell_width && cell_height >= min_cell_height
     }
@@ -109,7 +109,7 @@ unsafe extern "system" fn enum_monitor_proc(
     hmonitor: HMONITOR,
     _hdc: HDC,
     _rect: *mut RECT,
-    lparam: LPARAM,
+    lparam: LPARAM
 ) -> BOOL {
     unsafe {
         let context = &mut *(lparam.0 as *mut EnumContext);
@@ -143,18 +143,18 @@ unsafe extern "system" fn enum_monitor_proc(
             monitor_info.monitorInfo.rcMonitor.left,
             monitor_info.monitorInfo.rcMonitor.top,
             monitor_info.monitorInfo.rcMonitor.right - monitor_info.monitorInfo.rcMonitor.left,
-            monitor_info.monitorInfo.rcMonitor.bottom - monitor_info.monitorInfo.rcMonitor.top,
+            monitor_info.monitorInfo.rcMonitor.bottom - monitor_info.monitorInfo.rcMonitor.top
         );
 
         let work_area = Rect::new(
             monitor_info.monitorInfo.rcWork.left,
             monitor_info.monitorInfo.rcWork.top,
             monitor_info.monitorInfo.rcWork.right - monitor_info.monitorInfo.rcWork.left,
-            monitor_info.monitorInfo.rcWork.bottom - monitor_info.monitorInfo.rcWork.top,
+            monitor_info.monitorInfo.rcWork.bottom - monitor_info.monitorInfo.rcWork.top
         );
 
         let is_primary = (monitor_info.monitorInfo.dwFlags & 1) != 0; // MONITORINFOF_PRIMARY = 1
-        let dpi_scale = dpi_x as f32 / 96.0;
+        let dpi_scale = (dpi_x as f32) / 96.0;
 
         let monitor = Monitor {
             handle: hmonitor,
@@ -182,12 +182,13 @@ pub fn enumerate_monitors() -> Result<Vec<Monitor>, MonitorError> {
     };
 
     unsafe {
-        if EnumDisplayMonitors(
-            None,
-            None,
-            Some(enum_monitor_proc),
-            LPARAM(&mut context as *mut _ as isize),
-        ) == FALSE
+        if
+            EnumDisplayMonitors(
+                None,
+                None,
+                Some(enum_monitor_proc),
+                LPARAM(&mut context as *mut _ as isize)
+            ) == FALSE
         {
             return Err(MonitorError::EnumerationFailed);
         }

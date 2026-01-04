@@ -4,7 +4,7 @@
 //! process. It handles the progression from initial key press to final selection
 //! and calculates bounding rectangles.
 
-use crate::domain::keyboard::{GridCoords, KeyboardError};
+use crate::domain::keyboard::{ GridCoords, KeyboardError };
 
 /// Errors that can occur during selection operations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +14,9 @@ pub enum SelectionError {
     /// The selection is already complete
     SelectionAlreadyComplete,
     /// Invalid coordinates provided
-    InvalidCoordinates { coords: GridCoords },
+    InvalidCoordinates {
+        coords: GridCoords,
+    },
     /// Keyboard error during selection
     KeyboardError(KeyboardError),
 }
@@ -31,7 +33,9 @@ pub enum SelectionState {
     /// No selection has been started
     NotStarted,
     /// First coordinate has been selected, waiting for second
-    InProgress { start: GridCoords },
+    InProgress {
+        start: GridCoords,
+    },
     /// Selection is complete with normalized coordinates
     Complete {
         /// Top-left corner of the selection
@@ -150,7 +154,9 @@ impl Selection {
     pub fn complete(&mut self, coords: GridCoords) -> Result<(), SelectionError> {
         let start = match &self.state {
             SelectionState::InProgress { start } => *start,
-            SelectionState::NotStarted => return Err(SelectionError::NoSelectionStarted),
+            SelectionState::NotStarted => {
+                return Err(SelectionError::NoSelectionStarted);
+            }
             SelectionState::Complete { .. } => {
                 return Err(SelectionError::SelectionAlreadyComplete);
             }
@@ -188,10 +194,7 @@ impl Selection {
     /// the actual bottom-right corner, regardless of the order in which they were selected.
     pub fn get_normalized_coords(&self) -> Option<(GridCoords, GridCoords)> {
         match &self.state {
-            SelectionState::Complete {
-                top_left,
-                bottom_right,
-            } => Some((*top_left, *bottom_right)),
+            SelectionState::Complete { top_left, bottom_right } => Some((*top_left, *bottom_right)),
             _ => None,
         }
     }
@@ -214,12 +217,11 @@ impl Selection {
     /// assert_eq!(height, 2); // Rows 0, 1
     /// ```
     pub fn get_dimensions(&self) -> Option<(u32, u32)> {
-        self.get_normalized_coords()
-            .map(|(top_left, bottom_right)| {
-                let width = bottom_right.col - top_left.col + 1;
-                let height = bottom_right.row - top_left.row + 1;
-                (width, height)
-            })
+        self.get_normalized_coords().map(|(top_left, bottom_right)| {
+            let width = bottom_right.col - top_left.col + 1;
+            let height = bottom_right.row - top_left.row + 1;
+            (width, height)
+        })
     }
 
     /// Calculates the total number of cells in the selection
@@ -260,7 +262,7 @@ impl Selection {
     ///
     /// # Arguments
     /// * `start` - First coordinate
-    /// * `end` - Second coordinate  
+    /// * `end` - Second coordinate
     ///
     /// # Returns
     /// A new Selection with normalized coordinates
@@ -294,7 +296,7 @@ impl Selection {
     /// - First key starts the selection
     /// - Second key completes the selection
     ///
-    /// # Arguments  
+    /// # Arguments
     /// * `coords` - Grid coordinates for the pressed key
     ///
     /// # Returns
@@ -415,10 +417,7 @@ mod tests {
         selection.complete(GridCoords::new(1, 1)).unwrap();
 
         let result = selection.complete(GridCoords::new(2, 2));
-        assert!(matches!(
-            result,
-            Err(SelectionError::SelectionAlreadyComplete)
-        ));
+        assert!(matches!(result, Err(SelectionError::SelectionAlreadyComplete)));
     }
 
     #[test]
@@ -517,10 +516,7 @@ mod tests {
         // Start: NotStarted -> InProgress
         assert!(matches!(selection.state(), SelectionState::NotStarted));
         selection.start(GridCoords::new(0, 0)).unwrap();
-        assert!(matches!(
-            selection.state(),
-            SelectionState::InProgress { .. }
-        ));
+        assert!(matches!(selection.state(), SelectionState::InProgress { .. }));
 
         // Complete: InProgress -> Complete
         selection.complete(GridCoords::new(1, 1)).unwrap();

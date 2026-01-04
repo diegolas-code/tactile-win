@@ -9,11 +9,18 @@
 
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{ HWND, LPARAM, LRESULT, WPARAM },
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW,
-            UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+            CallNextHookEx,
+            HHOOK,
+            KBDLLHOOKSTRUCT,
+            PostMessageW,
+            SetWindowsHookExW,
+            UnhookWindowsHookEx,
+            WH_KEYBOARD_LL,
+            WM_KEYDOWN,
+            WM_SYSKEYDOWN,
         },
     },
     core::PCWSTR,
@@ -68,7 +75,7 @@ impl KeyEvent {
             0x59 => Some(KeyEvent::GridKey('Y')), // Y
             0x55 => Some(KeyEvent::GridKey('U')), // U
             0x49 => Some(KeyEvent::GridKey('I')), // I
-            0x4F => Some(KeyEvent::GridKey('O')), // O
+            0x4f => Some(KeyEvent::GridKey('O')), // O
             0x50 => Some(KeyEvent::GridKey('P')), // P
 
             0x41 => Some(KeyEvent::GridKey('A')), // A
@@ -77,26 +84,26 @@ impl KeyEvent {
             0x46 => Some(KeyEvent::GridKey('F')), // F
             0x47 => Some(KeyEvent::GridKey('G')), // G
             0x48 => Some(KeyEvent::GridKey('H')), // H
-            0x4A => Some(KeyEvent::GridKey('J')), // J
-            0x4B => Some(KeyEvent::GridKey('K')), // K
-            0x4C => Some(KeyEvent::GridKey('L')), // L
+            0x4a => Some(KeyEvent::GridKey('J')), // J
+            0x4b => Some(KeyEvent::GridKey('K')), // K
+            0x4c => Some(KeyEvent::GridKey('L')), // L
 
-            0x5A => Some(KeyEvent::GridKey('Z')), // Z
+            0x5a => Some(KeyEvent::GridKey('Z')), // Z
             0x58 => Some(KeyEvent::GridKey('X')), // X
             0x43 => Some(KeyEvent::GridKey('C')), // C
             0x56 => Some(KeyEvent::GridKey('V')), // V
             0x42 => Some(KeyEvent::GridKey('B')), // B
-            0x4E => Some(KeyEvent::GridKey('N')), // N
-            0x4D => Some(KeyEvent::GridKey('M')), // M
+            0x4e => Some(KeyEvent::GridKey('N')), // N
+            0x4d => Some(KeyEvent::GridKey('M')), // M
 
             // Navigation keys
             0x25 => Some(KeyEvent::Navigation(NavigationDirection::Left)), // VK_LEFT
             0x27 => Some(KeyEvent::Navigation(NavigationDirection::Right)), // VK_RIGHT
-            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)),   // VK_UP
+            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)), // VK_UP
             0x28 => Some(KeyEvent::Navigation(NavigationDirection::Down)), // VK_DOWN
 
             // Cancel keys
-            0x1B => Some(KeyEvent::Cancel), // VK_ESCAPE
+            0x1b => Some(KeyEvent::Cancel), // VK_ESCAPE
 
             // Invalid key - return None to pass through
             _ => None,
@@ -149,11 +156,16 @@ impl KeyboardCapture {
             });
 
             // Install low-level keyboard hook
-            let hinstance = GetModuleHandleW(PCWSTR::null())
-                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+            let hinstance = GetModuleHandleW(PCWSTR::null()).map_err(
+                |_| KeyboardCaptureError::HookInstallationFailed
+            )?;
 
-            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), hinstance, 0)
-                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+            let hook = SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(keyboard_hook_proc),
+                hinstance,
+                0
+            ).map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
 
             self.hook = Some(hook);
         }
@@ -206,12 +218,14 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
     let state = unsafe {
         match &*std::ptr::addr_of!(KEYBOARD_CAPTURE_STATE) {
             Some(state) => state,
-            None => return call_next_hook(code, wparam, lparam),
+            None => {
+                return call_next_hook(code, wparam, lparam);
+            }
         }
     };
 
     // Only handle key down events
-    if wparam.0 != WM_KEYDOWN as usize && wparam.0 != WM_SYSKEYDOWN as usize {
+    if wparam.0 != (WM_KEYDOWN as usize) && wparam.0 != (WM_SYSKEYDOWN as usize) {
         return call_next_hook(code, wparam, lparam);
     }
 
@@ -230,7 +244,7 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                     state.target_hwnd,
                     WM_TACTILE_KEY_EVENT,
                     WPARAM(vk_code as usize),
-                    LPARAM(0),
+                    LPARAM(0)
                 )
             };
 
@@ -294,7 +308,7 @@ mod tests {
         // Test grid keys
         assert_eq!(KeyEvent::from_vk_code(0x51), Some(KeyEvent::GridKey('Q')));
         assert_eq!(KeyEvent::from_vk_code(0x41), Some(KeyEvent::GridKey('A')));
-        assert_eq!(KeyEvent::from_vk_code(0x5A), Some(KeyEvent::GridKey('Z')));
+        assert_eq!(KeyEvent::from_vk_code(0x5a), Some(KeyEvent::GridKey('Z')));
 
         // Test navigation keys
         assert_eq!(
@@ -307,7 +321,7 @@ mod tests {
         );
 
         // Test cancel key
-        assert_eq!(KeyEvent::from_vk_code(0x1B), Some(KeyEvent::Cancel));
+        assert_eq!(KeyEvent::from_vk_code(0x1b), Some(KeyEvent::Cancel));
 
         // Test invalid key
         assert_eq!(KeyEvent::from_vk_code(0x01), None); // VK_LBUTTON
