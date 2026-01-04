@@ -5,22 +5,29 @@
 
 use crate::app::state::{ AppState, StateEvent, StateMachine };
 use crate::domain::grid::Grid;
-use crate::input::{ HotkeyError, HotkeyManager, HotkeyModifier, VirtualKey };
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ enumerate_monitors, Monitor, MonitorError };
 use crate::ui::{ OverlayError, OverlayManager };
 use std::sync::{ Arc, Mutex };
-use windows::Win32::Foundation::{ HWND, LPARAM, WPARAM };
+use windows::Win32::Foundation::{ HWND, WPARAM };
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    MOD_ALT,
+    MOD_CONTROL,
+    RegisterHotKey,
+    UnregisterHotKey,
+    VK_F9,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
     MSG,
     PM_REMOVE,
     PeekMessageW,
     TranslateMessage,
-    WM_APP,
     WM_HOTKEY,
     WM_QUIT,
 };
+
+const MAIN_HOTKEY_ID: i32 = 1;
 
 /// Application errors that can occur during controller operations
 #[derive(Debug)]
@@ -31,8 +38,8 @@ pub enum AppError {
     GridCreationFailed(String),
     /// No suitable monitors found for grid positioning
     NoSuitableMonitors,
-    /// Hotkey management failed
-    HotkeyError(HotkeyError),
+    /// Global hotkey registration failed
+    HotkeyRegistrationFailed(String),
     /// Overlay management failed
     OverlayError(OverlayError),
     /// Keyboard capture failed
@@ -42,12 +49,6 @@ pub enum AppError {
 impl From<MonitorError> for AppError {
     fn from(err: MonitorError) -> Self {
         AppError::MonitorError(err)
-    }
-}
-
-impl From<HotkeyError> for AppError {
-    fn from(err: HotkeyError) -> Self {
-        AppError::HotkeyError(err)
     }
 }
 
@@ -69,7 +70,9 @@ impl std::fmt::Display for AppError {
             AppError::MonitorError(e) => write!(f, "Monitor error: {:?}", e),
             AppError::GridCreationFailed(msg) => write!(f, "Grid creation failed: {}", msg),
             AppError::NoSuitableMonitors => write!(f, "No suitable monitors for grid positioning"),
-            AppError::HotkeyError(e) => write!(f, "Hotkey error: {:?}", e),
+            AppError::HotkeyRegistrationFailed(msg) => {
+                write!(f, "Hotkey registration failed: {}", msg)
+            }
             AppError::OverlayError(e) => write!(f, "Overlay error: {:?}", e),
             AppError::KeyboardCaptureError(e) => write!(f, "Keyboard capture error: {}", e),
         }
@@ -77,64 +80,6 @@ impl std::fmt::Display for AppError {
 }
 
 impl std::error::Error for AppError {}
-
-/// RAII wrapper for global hotkey management
-///
-/// Automatically starts/stops the hotkey manager and manages hotkey registration.
-/// Provides thread-safe access to hotkey functionality.
-pub struct HotkeyManagerGuard {
-    manager: HotkeyManager,
-    main_hotkey_id: Option<u32>,
-}
-
-impl HotkeyManagerGuard {
-    /// Create a new hotkey manager and register the main application hotkey
-    pub fn new() -> Result<Self, AppError> {
-        println!("HotkeyManagerGuard: Creating new hotkey manager...");
-        let mut manager = HotkeyManager::new();
-
-        // Start the message loop
-        println!("HotkeyManagerGuard: Starting hotkey manager...");
-        manager.start()?;
-        println!("HotkeyManagerGuard: Hotkey manager started successfully");
-
-        Ok(Self {
-            manager,
-            main_hotkey_id: None,
-        })
-    }
-
-    /// Register the main application hotkey
-    pub fn register_main_hotkey<F>(
-        &mut self,
-        modifiers: &[HotkeyModifier],
-        key: VirtualKey,
-        callback: F
-    ) -> Result<(), AppError>
-        where F: Fn() + Send + Sync + 'static
-    {
-        let hotkey_id = self.manager.register_hotkey(modifiers, key, Arc::new(callback))?;
-
-        self.main_hotkey_id = Some(hotkey_id);
-        Ok(())
-    }
-
-    /// Check if the hotkey manager is running
-    pub fn is_running(&self) -> bool {
-        self.manager.is_running()
-    }
-}
-
-impl Drop for HotkeyManagerGuard {
-    fn drop(&mut self) {
-        // Unregister main hotkey if registered
-        if let Some(id) = self.main_hotkey_id {
-            let _ = self.manager.unregister_hotkey(id);
-        }
-
-        // Manager will be automatically stopped by its own Drop implementation
-    }
-}
 
 /// RAII wrapper for overlay management
 ///
@@ -273,11 +218,44 @@ pub struct AppController {
     grids: Vec<Grid>,
     /// Main window handle for message processing
     main_window: HWND,
-    /// Hotkey ID for cleanup
-    hotkey_id: i32,
+    /// Tracks whether the hotkey was registered successfully
+    hotkey_registered: bool,
 }
 
 impl AppController {
+    fn register_main_hotkey(&mut self) -> Result<(), AppError> {
+        if self.main_window.0 == 0 {
+            println!("AppController: No main window handle - skipping hotkey registration");
+            return Ok(());
+        }
+
+        unsafe {
+            let modifiers = MOD_CONTROL | MOD_ALT;
+            RegisterHotKey(
+                self.main_window,
+                MAIN_HOTKEY_ID,
+                modifiers,
+                u32::from(VK_F9.0),
+            )
+            .map_err(|err| AppError::HotkeyRegistrationFailed(format!("{}", err)))?;
+        }
+
+        self.hotkey_registered = true;
+        Ok(())
+    }
+
+    fn unregister_main_hotkey(&mut self) {
+        if !self.hotkey_registered || self.main_window.0 == 0 {
+            return;
+        }
+
+        unsafe {
+            let _ = UnregisterHotKey(self.main_window, MAIN_HOTKEY_ID);
+        }
+
+        self.hotkey_registered = false;
+    }
+
     /// Creates a new application controller
     ///
     /// # Arguments
@@ -317,48 +295,28 @@ impl AppController {
         }
 
         // Initialize RAII-wrapped components
-        println!("AppController: Creating hotkey manager...");
-        let mut hotkey_manager = HotkeyManagerGuard::new()?;
-        
-        // Register Ctrl+Shift+Win+T hotkey
-        let main_window_for_callback = main_window;
-        let hotkey_callback = move || {
-            println!("Hotkey callback executed!");
-            // Post custom message to main window to trigger state change
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-                let _ = PostMessageW(main_window_for_callback, WM_APP + 1, WPARAM(0), LPARAM(0));
-            }
-        };
-        
-        println!("AppController: Registering hotkey...");
-        hotkey_manager.register_main_hotkey(
-            &[],  // No modifiers - just F9
-            VirtualKey::F9,
-            hotkey_callback,
-        ).map_err(|e| {
-            eprintln!("Failed to register hotkey: {}", e);
-            e
-        })?;
-        println!("AppController: Hotkey registered (F9)");
-        
-        let mut overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
+        let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
         let keyboard_capture = KeyboardCaptureManager::new(main_window);
 
         // Start in idle mode - hotkey activates selection
-        println!("AppController: Starting in IDLE mode - press Ctrl+Shift+Win+T to activate");
+        println!("AppController: Starting in IDLE mode - press Ctrl+Alt+F9 to activate");
         let initial_state = AppState::Idle;
         let state = Arc::new(Mutex::new(initial_state));
 
-        Ok(Self {
+        let mut controller = Self {
             state,
             overlay_manager,
             keyboard_capture,
             monitors,
             grids,
             main_window,
-            hotkey_id: 1,
-        })
+            hotkey_registered: false,
+        };
+
+        controller.register_main_hotkey()?;
+        println!("AppController: Hotkey registered (Ctrl+Alt+F9)");
+
+        Ok(controller)
     }
 
     /// Gets the current application state (thread-safe)
@@ -650,7 +608,7 @@ impl AppController {
     ///
     /// # Arguments
     /// * `wparam` - Windows message parameter containing virtual key code
-    pub fn handle_keyboard_event(&mut self, wparam: windows::Win32::Foundation::WPARAM) {
+    pub fn handle_keyboard_event(&mut self, wparam: WPARAM) {
         if let Some(key_event) = KeyboardCaptureManager::parse_message(wparam) {
             match key_event {
                 KeyEvent::GridKey(ch) => {
@@ -731,10 +689,9 @@ impl AppController {
         }
 
         println!("\n=== APPLICATION READY ===");
-        println!("Press F9 to activate grid overlay");
+        println!("Press Ctrl+Alt+F9 to activate grid overlay");
         println!("========================\n");
-
-        const WM_TACTILE_KEY_EVENT: u32 = 0x8000;
+        let keyboard_message_id = KeyboardCaptureManager::message_id();
 
         unsafe {
             let mut msg = MSG::default();
@@ -757,11 +714,11 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
-                    } else if msg.message == WM_HOTKEY {
-                        // Hotkey pressed (F9) - toggle state
-                        println!("F9 pressed! Toggling overlay...");
+                    } else if msg.message == WM_HOTKEY && msg.wParam.0 == MAIN_HOTKEY_ID as usize {
+                        // Hotkey pressed (Ctrl+Alt+F9) - toggle state
+                        println!("Ctrl+Alt+F9 pressed! Toggling overlay...");
                         self.handle_hotkey();
-                    } else if msg.message == WM_TACTILE_KEY_EVENT {
+                    } else if msg.message == keyboard_message_id {
                         // Handle keyboard event from hook
                         self.handle_keyboard_event(msg.wParam);
                     } else {
@@ -784,13 +741,7 @@ impl AppController {
 impl Drop for AppController {
     fn drop(&mut self) {
         println!("AppController: Shutting down with RAII cleanup");
-        
-        // Unregister hotkey
-        unsafe {
-            use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
-            let _ = UnregisterHotKey(self.main_window, self.hotkey_id);
-        }
-        
+        self.unregister_main_hotkey();
         // RAII wrappers will automatically clean up their resources
     }
 }
