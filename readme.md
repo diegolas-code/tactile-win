@@ -2,7 +2,7 @@
 
 `tactile-win` is a personal project written in Rust, created to explore the language and Windows APIs, as well as the use of LLMs as assistance in the development process since it's the first time I am developing an application using an agent-based approach.
 
-The application is inspired by the GNOME extension 'Tactile', a grid-based window resizing solution, but it's implemented as a native Windows application since I miss it a lot when I'm using my Windows PC.
+The application is inspired by the GNOME extension 'Tactile', a grid-based window resizing solution, but it's implemented as a native Windows application because I miss the feature a lot when I'm using my Windows PC.
 
 The goal of this project is to:
 - Explore the Rust language and build ecosystem by building a non-trivial application of my interest
