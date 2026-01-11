@@ -280,7 +280,7 @@ enum AppState {
 * Minimum cell size: 480x360 pixels
 * Two-step selection process (start key --> end key)
 * Multi-cell selection creates bounding boxes
-* Cross-monitor selection deferred to Phase 4 (advanced feature)
+* Cross-monitor selection deferred to Phase 5 (multi-monitor support)
 * QWERTY keyboard layout determines grid mapping
 * Overlay must preserve active window focus
 * All coordinates must be DPI-aware
@@ -315,13 +315,22 @@ enum AppState {
 10. Letter capture
 11. Single-monitor window positioning
 
-**Phase 4 – Advanced Features**
+**Phase 4 – Single-Monitor MVP**
 
-12. Cross-monitor selection and window movement
-13. Persistent configuration
-14. On-screen help
+1. Monitor orientation support (landscape/portrait)
+2. Window snapping with configurable gaps
+3. Configuration system with persistence
+4. Configuration UI
+5. Production polish (error handling, logging, notifications)
+
+**Phase 5 – Multi-Monitor and Distribution**
+
+12. Multi-monitor support with stable MonitorId
+13. Cross-monitor selection and window movement
+14. Per-monitor configuration
 15. System tray integration
-16. Final polish
+16. Help system and documentation
+17. Production distribution (installer, auto-updates)
 
 ### Cross-Monitor Complexity Warning
 
@@ -333,7 +342,7 @@ enum AppState {
 * **Work Area Variations**: Taskbar and system UI positioning varies per monitor
 * **Focus Complications**: Moving windows between monitors can trigger unexpected focus changes
 
-**Recommendation**: Implement single-monitor functionality first, then add cross-monitor as an advanced feature in Phase 4.
+**Recommendation**: Implement single-monitor functionality first (Phase 4), then add cross-monitor as an advanced feature in Phase 5.
 
 ### Architecture Constraints
 
