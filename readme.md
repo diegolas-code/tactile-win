@@ -37,3 +37,7 @@ cargo build --release
 cargo run --release
 ```
 4. **Try it out!** While the application is running, try resizing any open window using the `Ctrl+Alt+F9` hotkey. Close the application with `Ctrl+C` in the terminal.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
