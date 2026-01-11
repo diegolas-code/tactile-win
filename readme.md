@@ -21,16 +21,19 @@ The goal of this project is to:
 ## Try the application
 
 1. **Clone the repository**
-	```
-    git clone https://github.com/diegolas-code/tactile-win.git
-	cd tactile-win
-	```
+	
+```
+git clone https://github.com/diegolas-code/tactile-win.git
+cd tactile-win
+```
 2. **Build the project**
-	```
-    cargo build --release
-	```
+	
+```
+cargo build --release
+```
 3. **Run the application**
-	```
-    cargo run --release
-	```
-4. While the application is running, try resizing any open window using the **Ctrl+Alt+F9** hotkey. Close the application with Ctrl+C in the terminal.
+	
+```
+cargo run --release
+```
+4. **Try it out!** While the application is running, try resizing any open window using the `Ctrl+Alt+F9` hotkey. Close the application with `Ctrl+C` in the terminal.
