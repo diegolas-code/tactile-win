@@ -7,9 +7,10 @@ use crate::domain::selection::Selection;
 use std::time::Instant;
 
 /// Main application state - either idle or actively selecting
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AppState {
     /// Application is idle, waiting for hotkey activation
+    #[default]
     Idle,
     /// User is actively selecting grid cells
     Selecting(SelectingState),
@@ -66,12 +67,6 @@ impl SelectingState {
         self.active_monitor_index = monitor_index;
         // Reset selection when switching monitors
         self.selection.reset();
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::Idle
     }
 }
 

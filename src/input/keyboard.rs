@@ -24,6 +24,7 @@ const WM_TACTILE_KEY_EVENT: u32 = 0x8000; // WM_APP range
 
 /// Errors that can occur during keyboard capture
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum KeyboardCaptureError {
     #[error("Failed to install keyboard hook")]
     HookInstallationFailed,

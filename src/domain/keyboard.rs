@@ -212,7 +212,7 @@ impl QwertyLayout {
             .get(coords.row as usize)
             .and_then(|row| row.get(coords.col as usize))
             .filter(|&&key| key != '\0')
-            .map(|&key| key)
+            .copied()
             .ok_or(KeyboardError::InvalidKey('\0'))
     }
 }

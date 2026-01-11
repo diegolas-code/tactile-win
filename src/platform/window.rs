@@ -151,7 +151,7 @@ pub fn position_window(hwnd: HWND, target_rect: Rect) -> Result<(), WindowError>
 
         // If window is maximized, restore it first
         if window_info.is_maximized {
-            if ShowWindow(hwnd, SW_RESTORE).as_bool() == false {
+            if !ShowWindow(hwnd, SW_RESTORE).as_bool() {
                 return Err(WindowError::PositionFailed(hwnd));
             }
 

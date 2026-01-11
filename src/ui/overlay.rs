@@ -414,14 +414,16 @@ impl OverlayWindow {
                 return Err(OverlayError::MemoryDeviceContextFailed);
             }
 
-            let mut bitmap_info = BITMAPINFO::default();
-            bitmap_info.bmiHeader = BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: -height, // top-down bitmap so we can copy directly
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
+            let bitmap_info = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height, // top-down bitmap so we can copy directly
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -498,7 +500,7 @@ impl OverlayWindow {
             DeleteDC(memory_dc);
             ReleaseDC(HWND(0), screen_dc);
 
-            if let Err(_) = update_result {
+            if update_result.is_err() {
                 return Err(OverlayError::LayerUpdateFailed);
             }
         }

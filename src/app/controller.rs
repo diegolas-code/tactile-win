@@ -171,7 +171,7 @@ impl KeyboardCaptureManager {
 
     /// Check if currently capturing
     pub fn is_capturing(&self) -> bool {
-        self.capture.as_ref().map_or(false, |c| c.is_capturing())
+        self.capture.as_ref().is_some_and(|c| c.is_capturing())
     }
 
     /// Get the message ID for keyboard events
@@ -652,11 +652,9 @@ impl AppController {
     /// true if timeout occurred and was handled
     pub fn check_timeout(&mut self) -> bool {
         let current_state = self.get_state();
-        if let AppState::Selecting(selecting) = current_state {
-            if selecting.is_timed_out() {
-                self.handle_selection_timeout();
-                return true;
-            }
+        if let AppState::Selecting(selecting) = current_state && selecting.is_timed_out() {
+            self.handle_selection_timeout();
+            return true;
         }
         false
     }
