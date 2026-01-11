@@ -36,7 +36,7 @@ cargo build --release
 ```
 cargo run --release
 ```
-4. **Try it out!** While the application is running, try resizing any open window using the `Ctrl+Alt+F9` hotkey. Close the application with `Ctrl+C` in the terminal.
+4. **Try it out!** While the application is running, try resizing any open window using the `Ctrl+Alt+F9` hotkey. Enter any two letters from the grid to select the desired area corners. Application remains running until finished in the terminal through `Ctrl+C`.
 
 ## License
 
