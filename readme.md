@@ -12,4 +12,25 @@ The goal of this project is to:
 - Fully build and release a working application
 - LEARN
 
-This project is currently in an early development stage and is primarily intended as a learning exercise.
+---
+
+**This project is currently in an early development stage and is primarily intended as a learning exercise.**
+
+---
+
+## Try the application
+
+1. **Clone the repository**
+	```
+    git clone https://github.com/diegolas-code/tactile-win.git
+	cd tactile-win
+	```
+2. **Build the project**
+	```
+    cargo build --release
+	```
+3. **Run the application**
+	```
+    cargo run --release
+	```
+4. While the application is running, try resizing any open window using the **Ctrl+Alt+F9** hotkey. Close the application with Ctrl+C in the terminal.
