@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
+use windows::core::Error;
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, BeginPaint,
     CLIP_DEFAULT_PRECIS, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush,
@@ -54,8 +55,8 @@ pub enum OverlayError {
     #[error("Failed to select bitmap into memory DC")]
     BitmapSelectionFailed,
 
-    #[error("Failed to update layered window surface")]
-    LayerUpdateFailed,
+    #[error("Failed to update layered window surface (code {code})")]
+    LayerUpdateFailed { code: u32 },
 
     #[error("Overlay manager not initialized")]
     NotInitialized,
@@ -466,14 +467,6 @@ impl OverlayWindow {
                 return Err(OverlayError::BitmapSelectionFailed);
             }
 
-            let size = SIZE {
-                cx: width,
-                cy: height,
-            };
-            let dst_point = POINT {
-                x: self.monitor_rect.x,
-                y: self.monitor_rect.y,
-            };
             let src_point = POINT { x: 0, y: 0 };
             let blend = BLENDFUNCTION {
                 BlendOp: AC_SRC_OVER as u8,
@@ -485,8 +478,8 @@ impl OverlayWindow {
             let update_result = UpdateLayeredWindow(
                 self.hwnd,
                 screen_dc,
-                Some(&dst_point),
-                Some(&size),
+                None,
+                None,
                 memory_dc,
                 Some(&src_point),
                 COLORREF(0),
@@ -501,7 +494,8 @@ impl OverlayWindow {
             ReleaseDC(HWND(0), screen_dc);
 
             if update_result.is_err() {
-                return Err(OverlayError::LayerUpdateFailed);
+                let code = Error::from_win32().code().0 as u32;
+                return Err(OverlayError::LayerUpdateFailed { code });
             }
         }
 
@@ -564,14 +558,6 @@ impl OverlayManager {
     /// Show overlays on all monitors
     pub fn show_all(&mut self) {
         if !self.visible {
-            // Set first monitor as active by default
-            if self.overlay_count() > 0 {
-                self.set_active_monitor(0);
-            }
-
-            // Render grid content
-            self.render_all_grids();
-
             let mut overlays = self.overlays.lock().unwrap();
             for overlay in overlays.values_mut() {
                 overlay.show();
@@ -652,6 +638,9 @@ impl OverlayManager {
     pub fn render_all_grids(&mut self) {
         let mut overlays = self.overlays.lock().unwrap();
         for overlay in overlays.values_mut() {
+            if !overlay.is_visible() {
+                continue;
+            }
             if let Err(err) = overlay.render_grid() {
                 eprintln!(
                     "Overlay rendering failed on monitor {}: {}",

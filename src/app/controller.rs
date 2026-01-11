@@ -370,6 +370,9 @@ impl AppController {
                 println!("CONTROLLER: Transitioning to Selecting state - showing overlays");
                 // Show overlays when entering selection mode
                 self.overlay_manager.show_all();
+                if self.overlay_manager.overlay_count() > 0 {
+                    self.overlay_manager.set_active_monitor(0);
+                }
                 println!("CONTROLLER: Overlays shown");
             }
             (AppState::Selecting(_), AppState::Idle) => {
@@ -403,10 +406,10 @@ impl AppController {
                     "Switched to Selecting state on monitor {}",
                     selecting.active_monitor_index
                 );
-                // Show overlays and start keyboard capture
+                // Show overlays before marking the active monitor
+                self.overlay_manager.show_all();
                 self.overlay_manager
                     .set_active_monitor(selecting.active_monitor_index);
-                self.overlay_manager.show_all();
 
                 // Start keyboard capture
                 if let Err(e) = self.keyboard_capture.start_capture() {
