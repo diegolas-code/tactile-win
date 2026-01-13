@@ -10,6 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
 
 mod app;
+mod config;
 mod domain;
 mod input;
 mod platform;
@@ -24,8 +25,8 @@ use platform::{monitors, window};
 // Phase 1 Constants
 const DEFAULT_GRID_COLS: u32 = 3;
 const DEFAULT_GRID_ROWS: u32 = 2;
-const MIN_CELL_WIDTH: i32 = 480;
-const MIN_CELL_HEIGHT: i32 = 350;
+const MIN_CELL_WIDTH: i32 = 300;
+const MIN_CELL_HEIGHT: i32 = 300;
 const MIN_MONITOR_HEIGHT: i32 = 600;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

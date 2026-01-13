@@ -4,10 +4,11 @@
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
 use crate::app::state::{AppState, StateEvent, StateMachine};
+use crate::config::{GridConfigError, GridConfigStore, MonitorGridConfig};
 use crate::domain::grid::Grid;
 use crate::input::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard};
 use crate::platform::monitors::{Monitor, MonitorError, enumerate_monitors};
-use crate::ui::{OverlayError, OverlayManager};
+use crate::ui::{GridConfigurationDialog, OverlayError, OverlayManager};
 use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{HWND, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -34,6 +35,8 @@ pub enum AppError {
     OverlayError(OverlayError),
     /// Keyboard capture failed
     KeyboardCaptureError(KeyboardCaptureError),
+    /// Configuration store failure
+    ConfigStoreError(GridConfigError),
 }
 
 impl From<MonitorError> for AppError {
@@ -65,7 +68,14 @@ impl std::fmt::Display for AppError {
             }
             AppError::OverlayError(e) => write!(f, "Overlay error: {:?}", e),
             AppError::KeyboardCaptureError(e) => write!(f, "Keyboard capture error: {}", e),
+            AppError::ConfigStoreError(e) => write!(f, "Configuration error: {}", e),
         }
+    }
+}
+
+impl From<GridConfigError> for AppError {
+    fn from(err: GridConfigError) -> Self {
+        AppError::ConfigStoreError(err)
     }
 }
 
@@ -206,6 +216,8 @@ pub struct AppController {
     monitors: Vec<Monitor>,
     /// Grid instances per monitor (stable configuration)
     grids: Vec<Grid>,
+    /// Persisted grid configuration per monitor
+    config_store: GridConfigStore,
     /// Main window handle for message processing
     main_window: HWND,
     /// Tracks whether the hotkey was registered successfully
@@ -260,30 +272,9 @@ impl AppController {
             return Err(AppError::NoSuitableMonitors);
         }
 
-        // Create grids for each monitor using Phase 2 domain logic
-        let mut grids = Vec::new();
-        for (i, monitor) in monitors.iter().enumerate() {
-            match Grid::new(2, 3, monitor.work_area) {
-                // 2 rows, 3 columns (Q W E / A S D)
-                Ok(grid) => {
-                    grids.push(grid);
-                    println!(
-                        "Monitor {}: Created 2x3 grid (2 rows, 3 cols) for {}x{} area",
-                        i, monitor.work_area.w, monitor.work_area.h
-                    );
-                }
-                Err(e) => {
-                    return Err(AppError::GridCreationFailed(format!(
-                        "Monitor {}: {:?}",
-                        i, e
-                    )));
-                }
-            }
-        }
-
-        if grids.is_empty() {
-            return Err(AppError::NoSuitableMonitors);
-        }
+        // Initialize configuration store and build grids per monitor
+        let config_store = GridConfigStore::new(&monitors)?;
+        let grids = config_store.build_grids(&monitors)?;
 
         // Initialize RAII-wrapped components
         let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
@@ -300,6 +291,7 @@ impl AppController {
             keyboard_capture,
             monitors,
             grids,
+            config_store,
             main_window,
             hotkey_registered: false,
         };
@@ -636,12 +628,50 @@ impl AppController {
                 KeyEvent::Cancel => {
                     self.handle_cancellation();
                 }
+                KeyEvent::OpenConfiguration => {
+                    self.handle_config_request();
+                }
                 KeyEvent::Invalid(vk_code) => {
                     println!("Invalid key pressed (vk={}), cancelling selection", vk_code);
                     self.handle_cancellation();
                 }
             }
         }
+    }
+
+    fn handle_config_request(&mut self) {
+        if matches!(self.get_state(), AppState::Selecting(_)) {
+            self.handle_cancellation();
+        }
+
+        println!("Opening grid configuration dialog");
+        match GridConfigurationDialog::open(&self.monitors, self.config_store.configs()) {
+            Ok(Some(updated_configs)) => {
+                if let Err(err) = self.apply_configuration_changes(updated_configs) {
+                    eprintln!("Failed to apply configuration: {}", err);
+                } else {
+                    println!("Configuration applied successfully");
+                }
+            }
+            Ok(None) => {
+                println!("Configuration dialog cancelled");
+            }
+            Err(err) => {
+                eprintln!("Failed to open configuration dialog: {}", err);
+            }
+        }
+    }
+
+    fn apply_configuration_changes(
+        &mut self,
+        updated: Vec<MonitorGridConfig>,
+    ) -> Result<(), AppError> {
+        self.config_store.update_configs(&self.monitors, updated)?;
+        self.grids = self.config_store.build_grids(&self.monitors)?;
+        self.overlay_manager.hide_all();
+        let new_overlay_manager = OverlayManagerGuard::new(&self.monitors, &self.grids)?;
+        self.overlay_manager = new_overlay_manager;
+        Ok(())
     }
 
     /// Checks for selection timeout and handles it if necessary

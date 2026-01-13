@@ -51,6 +51,8 @@ pub enum KeyEvent {
     Navigation(NavigationDirection),
     /// Cancel selection
     Cancel,
+    /// Open configuration dialog
+    OpenConfiguration,
     /// Invalid key (for debugging)
     Invalid(u32),
 }
@@ -69,7 +71,7 @@ impl KeyEvent {
             0x55 => Some(KeyEvent::GridKey('U')), // U
             0x49 => Some(KeyEvent::GridKey('I')), // I
             0x4f => Some(KeyEvent::GridKey('O')), // O
-            0x50 => Some(KeyEvent::GridKey('P')), // P
+            0x50 => Some(KeyEvent::OpenConfiguration), // P opens config dialog
 
             0x41 => Some(KeyEvent::GridKey('A')), // A
             0x53 => Some(KeyEvent::GridKey('S')), // S
@@ -297,6 +299,7 @@ mod tests {
         assert_eq!(KeyEvent::from_vk_code(0x51), Some(KeyEvent::GridKey('Q')));
         assert_eq!(KeyEvent::from_vk_code(0x41), Some(KeyEvent::GridKey('A')));
         assert_eq!(KeyEvent::from_vk_code(0x5a), Some(KeyEvent::GridKey('Z')));
+        assert_eq!(KeyEvent::from_vk_code(0x50), Some(KeyEvent::OpenConfiguration));
 
         // Test navigation keys
         assert_eq!(

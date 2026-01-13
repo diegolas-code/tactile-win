@@ -300,7 +300,6 @@ impl Default for GridRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::keyboard::QwertyLayout;
 
     #[test]
     fn grid_layout_creation() {

@@ -28,6 +28,40 @@ pub enum GridError {
     InvalidCellSize { width: u32, height: u32 },
 }
 
+impl std::fmt::Display for GridError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GridError::InvalidDimensions { rows, cols } => {
+                write!(f, "Invalid grid dimensions {}x{}", rows, cols)
+            }
+            GridError::ScreenTooSmall {
+                screen_width,
+                screen_height,
+                min_cell_width,
+                min_cell_height,
+            } => {
+                write!(
+                    f,
+                    "Screen {}x{} is too small for minimum cell {}x{}",
+                    screen_width, screen_height, min_cell_width, min_cell_height
+                )
+            }
+            GridError::InvalidCoordinates { coords, max_row, max_col } => {
+                write!(
+                    f,
+                    "Coordinates ({},{}) exceed grid bounds ({},{})",
+                    coords.row, coords.col, max_row, max_col
+                )
+            }
+            GridError::InvalidCellSize { width, height } => {
+                write!(f, "Calculated cell size {}x{} is invalid", width, height)
+            }
+        }
+    }
+}
+
+impl std::error::Error for GridError {}
+
 /// Represents a logical grid that can be overlaid on a screen area
 ///
 /// The grid divides a rectangular screen area into a grid of cells.
@@ -50,10 +84,10 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// Minimum cell width in pixels (from architecture requirements)
-    pub const MIN_CELL_WIDTH: u32 = 480;
-    /// Minimum cell height in pixels (from architecture requirements)
-    pub const MIN_CELL_HEIGHT: u32 = 360;
+    /// Minimum cell width in pixels (baseline default, can be overridden by configuration)
+    pub const MIN_CELL_WIDTH: u32 = 300;
+    /// Minimum cell height in pixels (baseline default, can be overridden by configuration)
+    pub const MIN_CELL_HEIGHT: u32 = 300;
 
     /// Creates a new grid for the specified screen area
     ///
@@ -74,24 +108,38 @@ impl Grid {
     /// assert_eq!(grid.dimensions(), (3, 2));
     /// ```
     pub fn new(rows: u32, cols: u32, screen_area: Rect) -> Result<Self, GridError> {
+        Self::with_min_cell_size(rows, cols, screen_area, Self::MIN_CELL_WIDTH, Self::MIN_CELL_HEIGHT)
+    }
+
+    /// Creates a grid while honoring a caller-provided minimum cell size
+    pub fn with_min_cell_size(
+        rows: u32,
+        cols: u32,
+        screen_area: Rect,
+        min_cell_width: u32,
+        min_cell_height: u32,
+    ) -> Result<Self, GridError> {
         // Validate grid dimensions
         if rows == 0 || cols == 0 {
             return Err(GridError::InvalidDimensions { rows, cols });
         }
 
+        let min_cell_width = min_cell_width.max(1);
+        let min_cell_height = min_cell_height.max(1);
+
         // Calculate cell dimensions (convert to u32 for calculations)
-        let screen_width = screen_area.w as u32;
-        let screen_height = screen_area.h as u32;
+        let screen_width = screen_area.w.max(0) as u32;
+        let screen_height = screen_area.h.max(0) as u32;
         let cell_width = screen_width / cols;
         let cell_height = screen_height / rows;
 
         // Validate minimum cell size requirements
-        if cell_width < Self::MIN_CELL_WIDTH || cell_height < Self::MIN_CELL_HEIGHT {
+        if cell_width < min_cell_width || cell_height < min_cell_height {
             return Err(GridError::ScreenTooSmall {
                 screen_width,
                 screen_height,
-                min_cell_width: Self::MIN_CELL_WIDTH,
-                min_cell_height: Self::MIN_CELL_HEIGHT,
+                min_cell_width,
+                min_cell_height,
             });
         }
 
