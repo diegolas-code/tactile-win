@@ -62,15 +62,15 @@ impl KeyEvent {
     fn from_vk_code(vk_code: u32) -> Option<Self> {
         match vk_code {
             // Grid keys (QWERTY layout)
-            0x51 => Some(KeyEvent::GridKey('Q')), // Q
-            0x57 => Some(KeyEvent::GridKey('W')), // W
-            0x45 => Some(KeyEvent::GridKey('E')), // E
-            0x52 => Some(KeyEvent::GridKey('R')), // R
-            0x54 => Some(KeyEvent::GridKey('T')), // T
-            0x59 => Some(KeyEvent::GridKey('Y')), // Y
-            0x55 => Some(KeyEvent::GridKey('U')), // U
-            0x49 => Some(KeyEvent::GridKey('I')), // I
-            0x4f => Some(KeyEvent::GridKey('O')), // O
+            0x51 => Some(KeyEvent::GridKey('Q')),      // Q
+            0x57 => Some(KeyEvent::GridKey('W')),      // W
+            0x45 => Some(KeyEvent::GridKey('E')),      // E
+            0x52 => Some(KeyEvent::GridKey('R')),      // R
+            0x54 => Some(KeyEvent::GridKey('T')),      // T
+            0x59 => Some(KeyEvent::GridKey('Y')),      // Y
+            0x55 => Some(KeyEvent::GridKey('U')),      // U
+            0x49 => Some(KeyEvent::GridKey('I')),      // I
+            0x4f => Some(KeyEvent::GridKey('O')),      // O
             0x50 => Some(KeyEvent::OpenConfiguration), // P opens config dialog
 
             0x41 => Some(KeyEvent::GridKey('A')), // A
@@ -299,7 +299,10 @@ mod tests {
         assert_eq!(KeyEvent::from_vk_code(0x51), Some(KeyEvent::GridKey('Q')));
         assert_eq!(KeyEvent::from_vk_code(0x41), Some(KeyEvent::GridKey('A')));
         assert_eq!(KeyEvent::from_vk_code(0x5a), Some(KeyEvent::GridKey('Z')));
-        assert_eq!(KeyEvent::from_vk_code(0x50), Some(KeyEvent::OpenConfiguration));
+        assert_eq!(
+            KeyEvent::from_vk_code(0x50),
+            Some(KeyEvent::OpenConfiguration)
+        );
 
         // Test navigation keys
         assert_eq!(
@@ -315,10 +318,7 @@ mod tests {
         assert_eq!(KeyEvent::from_vk_code(0x1b), Some(KeyEvent::Cancel));
 
         // Test invalid key
-        assert_eq!(
-            KeyEvent::from_vk_code(0x01),
-            Some(KeyEvent::Invalid(0x01))
-        ); // VK_LBUTTON
+        assert_eq!(KeyEvent::from_vk_code(0x01), Some(KeyEvent::Invalid(0x01))); // VK_LBUTTON
     }
 
     #[test]

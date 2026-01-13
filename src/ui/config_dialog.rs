@@ -14,12 +14,14 @@ use std::time::Duration;
 
 use crate::config::grid::{GridBounds, GridConfigError, MonitorGridConfig, ScreenOrientation};
 use crate::platform::monitors::Monitor;
-use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM, WIN32_ERROR};
-use windows::Win32::Graphics::Gdi::{GetStockObject, HFONT, DEFAULT_GUI_FONT};
+use windows::Win32::Foundation::{
+    GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WIN32_ERROR, WPARAM,
+};
+use windows::Win32::Graphics::Gdi::{DEFAULT_GUI_FONT, GetStockObject, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::{PCWSTR, PWSTR, w};
 
 const DIALOG_WIDTH: i32 = 520;
 const DIALOG_HEIGHT: i32 = 420;
@@ -151,10 +153,7 @@ struct SpinnerDescriptor {
 }
 
 impl DialogState {
-    fn new(
-        monitors: &[Monitor],
-        configs: &[MonitorGridConfig],
-    ) -> Result<Self, ConfigDialogError> {
+    fn new(monitors: &[Monitor], configs: &[MonitorGridConfig]) -> Result<Self, ConfigDialogError> {
         if monitors.len() != configs.len() {
             return Err(ConfigDialogError::DataMismatch);
         }
@@ -191,9 +190,8 @@ fn ensure_common_controls() {
 
 fn create_dialog_window(state_ptr: *mut DialogState) -> Result<(), ConfigDialogError> {
     unsafe {
-        let module = GetModuleHandleW(PCWSTR::null()).map_err(|e| {
-            ConfigDialogError::Win32Error(format!("{:?}", e))
-        })?;
+        let module = GetModuleHandleW(PCWSTR::null())
+            .map_err(|e| ConfigDialogError::Win32Error(format!("{:?}", e)))?;
         let instance: HINSTANCE = module.into();
 
         register_dialog_class(instance)?;
@@ -321,11 +319,7 @@ fn run_modal_loop(state_ptr: *mut DialogState) {
 
 unsafe fn dialog_state_mut(hwnd: HWND) -> Option<&'static mut DialogState> {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut DialogState;
-    if ptr.is_null() {
-        None
-    } else {
-        Some(&mut *ptr)
-    }
+    if ptr.is_null() { None } else { Some(&mut *ptr) }
 }
 
 impl DialogState {
@@ -419,8 +413,7 @@ impl DialogState {
         let summary_label = create_static(panel, self.font, "", 12, 36, PANEL_WIDTH - 24, 24);
 
         let reset_button = unsafe {
-            let style_bits =
-                WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | (BS_PUSHBUTTON as u32);
+            let style_bits = WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | (BS_PUSHBUTTON as u32);
             CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 w!("BUTTON"),
@@ -461,8 +454,7 @@ impl DialogState {
         );
 
         let advanced_toggle = unsafe {
-            let style_bits =
-                WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | (BS_AUTOCHECKBOX as u32);
+            let style_bits = WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | (BS_AUTOCHECKBOX as u32);
             CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 w!("BUTTON"),
@@ -502,7 +494,8 @@ impl DialogState {
             ShowWindow(advanced_group, SW_HIDE);
         }
 
-        let _min_width_label = create_static(advanced_group, self.font, "Minimum width", 12, 32, 140, 22);
+        let _min_width_label =
+            create_static(advanced_group, self.font, "Minimum width", 12, 32, 140, 22);
         let min_width_edit = create_readonly_edit(advanced_group, self.font, 160, 28, 64, 26);
         let min_width_spinner = create_spinner(advanced_group, 230, 28, 26);
         self.spinner_map.insert(
@@ -513,7 +506,8 @@ impl DialogState {
             },
         );
 
-        let _min_height_label = create_static(advanced_group, self.font, "Minimum height", 12, 68, 140, 22);
+        let _min_height_label =
+            create_static(advanced_group, self.font, "Minimum height", 12, 68, 140, 22);
         let min_height_edit = create_readonly_edit(advanced_group, self.font, 160, 64, 64, 26);
         let min_height_spinner = create_spinner(advanced_group, 230, 64, 26);
         self.spinner_map.insert(
@@ -582,7 +576,10 @@ impl DialogState {
     fn show_tab(&mut self, index: usize) {
         for (tab_index, panel) in self.panels.iter().enumerate() {
             unsafe {
-                ShowWindow(panel.panel, if tab_index == index { SW_SHOW } else { SW_HIDE });
+                ShowWindow(
+                    panel.panel,
+                    if tab_index == index { SW_SHOW } else { SW_HIDE },
+                );
             }
         }
         self.active_tab = index;
@@ -601,8 +598,16 @@ impl DialogState {
 
         set_numeric_field(panel.cols_edit, panel.cols_spinner, config.cols);
         set_numeric_field(panel.rows_edit, panel.rows_spinner, config.rows);
-        set_numeric_field(panel.min_width_edit, panel.min_width_spinner, config.min_cell_width);
-        set_numeric_field(panel.min_height_edit, panel.min_height_spinner, config.min_cell_height);
+        set_numeric_field(
+            panel.min_width_edit,
+            panel.min_width_spinner,
+            config.min_cell_width,
+        );
+        set_numeric_field(
+            panel.min_height_edit,
+            panel.min_height_spinner,
+            config.min_cell_height,
+        );
 
         self.update_summary_label(index);
         self.update_spinner_ranges(index)?;
@@ -629,11 +634,8 @@ impl DialogState {
             .get_mut(index)
             .ok_or(ConfigDialogError::DataMismatch)?;
 
-        let bounds = GridBounds::for_monitor(
-            monitor,
-            config.min_cell_width,
-            config.min_cell_height,
-        )?;
+        let bounds =
+            GridBounds::for_monitor(monitor, config.min_cell_width, config.min_cell_height)?;
 
         config.cols = bounds.clamp_cols(config.cols);
         config.rows = bounds.clamp_rows(config.rows);
@@ -676,11 +678,18 @@ impl DialogState {
     fn toggle_advanced_group(&mut self, index: usize, visible: bool) {
         if let Some(panel) = self.panels.get(index) {
             unsafe {
-                ShowWindow(panel.advanced_group, if visible { SW_SHOW } else { SW_HIDE });
+                ShowWindow(
+                    panel.advanced_group,
+                    if visible { SW_SHOW } else { SW_HIDE },
+                );
                 SendMessageW(
                     panel.advanced_toggle,
                     BM_SETCHECK,
-                    WPARAM(if visible { BST_CHECKED.0 as usize } else { BST_UNCHECKED.0 as usize }),
+                    WPARAM(if visible {
+                        BST_CHECKED.0 as usize
+                    } else {
+                        BST_UNCHECKED.0 as usize
+                    }),
                     LPARAM(0),
                 );
             }
@@ -704,7 +713,8 @@ impl DialogState {
             return;
         }
 
-        if command_id >= ID_BTN_RESET_BASE && command_id < ID_BTN_RESET_BASE + (self.panels.len() as i32)
+        if command_id >= ID_BTN_RESET_BASE
+            && command_id < ID_BTN_RESET_BASE + (self.panels.len() as i32)
         {
             let tab_index = (command_id - ID_BTN_RESET_BASE) as usize;
             self.reset_tab(tab_index);
@@ -716,7 +726,11 @@ impl DialogState {
             && notify_code == BN_CLICKED as u16
         {
             let tab_index = (command_id - ID_CHK_ADVANCED_BASE) as usize;
-            let new_state = !self.advanced_visible.get(tab_index).copied().unwrap_or(false);
+            let new_state = !self
+                .advanced_visible
+                .get(tab_index)
+                .copied()
+                .unwrap_or(false);
             self.toggle_advanced_group(tab_index, new_state);
             return;
         }
@@ -727,7 +741,8 @@ impl DialogState {
             let header = &*(lparam.0 as *const NMHDR);
 
             if header.hwndFrom == self.tab_hwnd && header.code == TCN_SELCHANGE as u32 {
-                let new_index = SendMessageW(self.tab_hwnd, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
+                let new_index =
+                    SendMessageW(self.tab_hwnd, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
                 self.show_tab(new_index);
                 return false;
             }
@@ -755,7 +770,12 @@ impl DialogState {
         }
     }
 
-    fn adjust_grid_dimension(&mut self, tab_index: usize, delta: &mut NMUPDOWN, is_columns: bool) -> bool {
+    fn adjust_grid_dimension(
+        &mut self,
+        tab_index: usize,
+        delta: &mut NMUPDOWN,
+        is_columns: bool,
+    ) -> bool {
         if tab_index >= self.configs.len() {
             return false;
         }
@@ -801,7 +821,12 @@ impl DialogState {
         true
     }
 
-    fn adjust_minimum_size(&mut self, tab_index: usize, delta: &mut NMUPDOWN, is_width: bool) -> bool {
+    fn adjust_minimum_size(
+        &mut self,
+        tab_index: usize,
+        delta: &mut NMUPDOWN,
+        is_width: bool,
+    ) -> bool {
         if tab_index >= self.configs.len() {
             return false;
         }
@@ -899,11 +924,8 @@ impl DialogState {
             .get(index)
             .ok_or(ConfigDialogError::DataMismatch)?;
 
-        let bounds = GridBounds::for_monitor(
-            monitor,
-            config.min_cell_width,
-            config.min_cell_height,
-        )?;
+        let bounds =
+            GridBounds::for_monitor(monitor, config.min_cell_width, config.min_cell_height)?;
 
         Ok(bounds)
     }
@@ -979,17 +1001,10 @@ fn create_readonly_edit(
     }
 }
 
-fn create_spinner(
-    parent: HWND,
-    x: i32,
-    y: i32,
-    height: i32,
-) -> HWND {
+fn create_spinner(parent: HWND, x: i32, y: i32, height: i32) -> HWND {
     unsafe {
-        let style_bits = WS_CHILD.0
-            | WS_VISIBLE.0
-            | (UDS_SETBUDDYINT as u32)
-            | (UDS_ARROWKEYS as u32);
+        let style_bits =
+            WS_CHILD.0 | WS_VISIBLE.0 | (UDS_SETBUDDYINT as u32) | (UDS_ARROWKEYS as u32);
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
             UPDOWN_CLASS,

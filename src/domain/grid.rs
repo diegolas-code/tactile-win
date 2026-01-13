@@ -46,7 +46,11 @@ impl std::fmt::Display for GridError {
                     screen_width, screen_height, min_cell_width, min_cell_height
                 )
             }
-            GridError::InvalidCoordinates { coords, max_row, max_col } => {
+            GridError::InvalidCoordinates {
+                coords,
+                max_row,
+                max_col,
+            } => {
                 write!(
                     f,
                     "Coordinates ({},{}) exceed grid bounds ({},{})",
@@ -108,7 +112,13 @@ impl Grid {
     /// assert_eq!(grid.dimensions(), (3, 2));
     /// ```
     pub fn new(rows: u32, cols: u32, screen_area: Rect) -> Result<Self, GridError> {
-        Self::with_min_cell_size(rows, cols, screen_area, Self::MIN_CELL_WIDTH, Self::MIN_CELL_HEIGHT)
+        Self::with_min_cell_size(
+            rows,
+            cols,
+            screen_area,
+            Self::MIN_CELL_WIDTH,
+            Self::MIN_CELL_HEIGHT,
+        )
     }
 
     /// Creates a grid while honoring a caller-provided minimum cell size

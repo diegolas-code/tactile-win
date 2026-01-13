@@ -63,7 +63,8 @@ impl MonitorGridConfig {
     }
 
     pub fn reset_to_defaults(&mut self, monitor: &Monitor) {
-        let (cols, rows) = Self::orientation_defaults(ScreenOrientation::from_rect(&monitor.work_area));
+        let (cols, rows) =
+            Self::orientation_defaults(ScreenOrientation::from_rect(&monitor.work_area));
         self.cols = cols;
         self.rows = rows;
         self.min_cell_width = Self::DEFAULT_MIN_CELL;
@@ -71,11 +72,7 @@ impl MonitorGridConfig {
     }
 
     pub fn apply_bounds_from_monitor(&mut self, monitor: &Monitor) -> Result<(), GridConfigError> {
-        let bounds = GridBounds::for_monitor(
-            monitor,
-            self.min_cell_width,
-            self.min_cell_height,
-        )?;
+        let bounds = GridBounds::for_monitor(monitor, self.min_cell_width, self.min_cell_height)?;
         self.cols = bounds.clamp_cols(self.cols);
         self.rows = bounds.clamp_rows(self.rows);
         Ok(())
@@ -88,11 +85,17 @@ impl MonitorGridConfig {
         let cols = bounds.clamp_cols(self.cols);
         let rows = bounds.clamp_rows(self.rows);
 
-        Grid::with_min_cell_size(rows, cols, monitor.work_area, sanitized_width, sanitized_height)
-            .map_err(|source| GridConfigError::GridCreationFailed {
-                monitor_index: monitor.index,
-                source,
-            })
+        Grid::with_min_cell_size(
+            rows,
+            cols,
+            monitor.work_area,
+            sanitized_width,
+            sanitized_height,
+        )
+        .map_err(|source| GridConfigError::GridCreationFailed {
+            monitor_index: monitor.index,
+            source,
+        })
     }
 
     pub fn bounds_for_monitor(
@@ -168,9 +171,15 @@ pub enum GridConfigError {
     #[error("Configuration mismatch between monitors and stored grid settings")]
     MonitorMismatch,
     #[error("Monitor {monitor_index} cannot satisfy minimum cell size requirements: {reason}")]
-    MonitorTooSmall { monitor_index: usize, reason: String },
+    MonitorTooSmall {
+        monitor_index: usize,
+        reason: String,
+    },
     #[error("Grid creation failed for monitor {monitor_index}: {source}")]
-    GridCreationFailed { monitor_index: usize, source: GridError },
+    GridCreationFailed {
+        monitor_index: usize,
+        source: GridError,
+    },
 }
 
 /// Store that keeps per-monitor grid configuration aligned with runtime monitors
@@ -222,8 +231,10 @@ impl GridConfigStore {
             }
 
             let mut sanitized = cfg;
-            sanitized.min_cell_width = MonitorGridConfig::sanitize_cell_dimension(sanitized.min_cell_width);
-            sanitized.min_cell_height = MonitorGridConfig::sanitize_cell_dimension(sanitized.min_cell_height);
+            sanitized.min_cell_width =
+                MonitorGridConfig::sanitize_cell_dimension(sanitized.min_cell_width);
+            sanitized.min_cell_height =
+                MonitorGridConfig::sanitize_cell_dimension(sanitized.min_cell_height);
             sanitized.cols = sanitized.cols.max(MonitorGridConfig::MIN_COLS);
             sanitized.rows = sanitized.rows.max(MonitorGridConfig::MIN_ROWS);
             sanitized.apply_bounds_from_monitor(monitor)?;
