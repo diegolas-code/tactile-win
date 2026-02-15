@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "selection_timeout_secs": 30,
+  "selection_timeout_secs": 5,
   "monitors": [
     {
       "monitor_id": "primary",
