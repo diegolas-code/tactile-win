@@ -247,6 +247,10 @@ impl GridConfigStore {
         Ok(store)
     }
 
+    pub fn configs(&self) -> &[MonitorGridConfig] {
+        &self.configs
+    }
+
     pub fn build_grids(&self, monitors: &[Monitor]) -> Result<Vec<Grid>, GridConfigError> {
         if self.configs.len() != monitors.len() {
             return Err(GridConfigError::MonitorMismatch);

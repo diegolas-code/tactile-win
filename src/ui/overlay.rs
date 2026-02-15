@@ -1,4 +1,4 @@
-//! Overlay window management for grid display
+﻿//! Overlay window management for grid display
 //!
 //! Provides transparent overlay windows that appear over all monitors
 //! without stealing focus from the active window. Uses proper Win32

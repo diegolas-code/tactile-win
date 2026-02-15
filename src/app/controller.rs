@@ -5,6 +5,7 @@
 
 use crate::app::state::{ AppState, StateEvent, StateMachine };
 use crate::config::{ GridConfigError, GridConfigStore };
+use crate::config::grid::{ GridBounds, MonitorGridConfig };
 use crate::domain::grid::Grid;
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
@@ -198,6 +199,8 @@ pub struct AppController {
     monitors: Vec<Monitor>,
     /// Grid instances per monitor (stable configuration)
     grids: Vec<Grid>,
+    /// Persisted grid configuration per monitor
+    config_store: GridConfigStore,
     /// Main window handle for message processing
     main_window: HWND,
     /// Tracks whether the hotkey was registered successfully
@@ -273,7 +276,8 @@ impl AppController {
         }
 
         // Initialize configuration store and build grids per monitor
-        let grids = GridConfigStore::new(&monitors)?.build_grids(&monitors)?;
+        let config_store = GridConfigStore::new(&monitors)?;
+        let grids = config_store.build_grids(&monitors)?;
 
         // Initialize RAII-wrapped components
         let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
@@ -290,6 +294,7 @@ impl AppController {
             keyboard_capture,
             monitors,
             grids,
+            config_store,
             main_window,
             hotkey_registered: false,
         };
@@ -325,6 +330,55 @@ impl AppController {
     /// Grid reference or None if index is invalid
     pub fn get_grid(&self, index: usize) -> Option<&Grid> {
         self.grids.get(index)
+    }
+
+    fn log_monitor_diagnostics(&self, list_index: usize, monitor: &Monitor) {
+        let configs = self.config_store.configs();
+        let config = configs
+            .iter()
+            .find(|cfg| cfg.monitor_index == monitor.index)
+            .or_else(|| configs.get(list_index));
+
+        match config {
+            Some(cfg) => {
+                let min_cell_width = MonitorGridConfig::sanitize_cell_dimension(cfg.min_cell_width);
+                let min_cell_height = MonitorGridConfig::sanitize_cell_dimension(
+                    cfg.min_cell_height
+                );
+
+                match GridBounds::for_monitor(monitor, min_cell_width, min_cell_height) {
+                    Ok(bounds) => {
+                        println!(
+                            "  Overlay diagnostics: grid {}x{} | rows {}-{} | cols {}-{} | min cell >= {}x{} px",
+                            cfg.cols,
+                            cfg.rows,
+                            bounds.min_rows,
+                            bounds.max_rows,
+                            bounds.min_cols,
+                            bounds.max_cols,
+                            min_cell_width,
+                            min_cell_height
+                        );
+                    }
+                    Err(err) => {
+                        println!(
+                            "  Overlay diagnostics: grid {}x{} but monitor cannot satisfy min cell {}x{} px ({})",
+                            cfg.cols,
+                            cfg.rows,
+                            min_cell_width,
+                            min_cell_height,
+                            err
+                        );
+                    }
+                }
+            }
+            None => {
+                println!(
+                    "  Overlay diagnostics: no persisted grid config for monitor {}",
+                    monitor.index
+                );
+            }
+        }
     }
 
     /// Processes a state event using the state machine
@@ -641,6 +695,7 @@ impl AppController {
                 monitor.work_area.x,
                 monitor.work_area.y
             );
+            self.log_monitor_diagnostics(i, monitor);
         }
 
         println!("\n=== APPLICATION READY ===");
