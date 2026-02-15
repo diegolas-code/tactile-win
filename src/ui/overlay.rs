@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{ Arc, Mutex };
 
-use windows::Win32::Foundation::{ COLORREF, HWND, LPARAM, LRESULT, POINT, WPARAM };
+use windows::Win32::Foundation::{ COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM };
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA,
     AC_SRC_OVER,
@@ -49,6 +49,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW,
     DestroyWindow,
     GWLP_USERDATA,
+    GWL_EXSTYLE,
+    GetWindowLongPtrW,
+    GetWindowRect,
     LWA_ALPHA,
     RegisterClassW,
     SW_HIDE,
@@ -324,11 +327,7 @@ impl OverlayWindow {
 
         let hwnd = unsafe {
             CreateWindowExW(
-                WS_EX_LAYERED |
-                    WS_EX_TOPMOST |
-                    WS_EX_NOACTIVATE |
-                    WS_EX_TOOLWINDOW |
-                    WS_EX_TRANSPARENT,
+                WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
                 class_name,
                 w!("Tactile Overlay"),
                 WS_POPUP, // Popup window with no frame
@@ -497,9 +496,36 @@ impl OverlayWindow {
                 return Err(OverlayError::DibSectionCreationFailed);
             }
 
+            let expected_bytes = (width as usize).saturating_mul(height as usize).saturating_mul(4);
+
+            if pixmap.data().len() != expected_bytes {
+                eprintln!(
+                    "Pixmap data length mismatch: actual={}, expected={} ({}x{})",
+                    pixmap.data().len(),
+                    expected_bytes,
+                    width,
+                    height
+                );
+            }
+
             {
                 let dst = slice::from_raw_parts_mut(pixel_ptr as *mut u8, pixmap.data().len());
-                dst.copy_from_slice(pixmap.data());
+
+                #[cfg(debug_assertions)]
+                {
+                    // Fill with a semi-transparent magenta diagnostic pattern
+                    for chunk in dst.chunks_exact_mut(4) {
+                        chunk[0] = 0xff; // Blue
+                        chunk[1] = 0x00; // Green
+                        chunk[2] = 0xff; // Red
+                        chunk[3] = 0x80; // Alpha 50%
+                    }
+                }
+
+                #[cfg(not(debug_assertions))]
+                {
+                    dst.copy_from_slice(pixmap.data());
+                }
             }
 
             let old_bitmap = SelectObject(memory_dc, dib_object);
@@ -510,6 +536,14 @@ impl OverlayWindow {
                 return Err(OverlayError::BitmapSelectionFailed);
             }
 
+            let size = SIZE {
+                cx: width,
+                cy: height,
+            };
+            let dst_point = POINT {
+                x: self.monitor_rect.x,
+                y: self.monitor_rect.y,
+            };
             let src_point = POINT { x: 0, y: 0 };
             let blend = BLENDFUNCTION {
                 BlendOp: AC_SRC_OVER as u8,
@@ -521,8 +555,8 @@ impl OverlayWindow {
             let update_result = UpdateLayeredWindow(
                 self.hwnd,
                 screen_dc,
-                None,
-                None,
+                Some(&dst_point),
+                Some(&size),
                 memory_dc,
                 Some(&src_point),
                 COLORREF(0),
@@ -536,8 +570,38 @@ impl OverlayWindow {
             DeleteDC(memory_dc);
             ReleaseDC(HWND(0), screen_dc);
 
-            if update_result.is_err() {
-                let code = windows::core::Error::from_win32().code().0 as u32;
+            if let Err(err) = update_result {
+                let code = err.code().0 as u32;
+
+                let mut hwnd_rect = RECT::default();
+                let rect_info = if GetWindowRect(self.hwnd, &mut hwnd_rect).is_ok() {
+                    format!(
+                        "RECT=({}, {}, {}, {})",
+                        hwnd_rect.left,
+                        hwnd_rect.top,
+                        hwnd_rect.right,
+                        hwnd_rect.bottom
+                    )
+                } else {
+                    "RECT=<unavailable>".to_string()
+                };
+
+                let ex_style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+
+                eprintln!(
+                    "UpdateLayeredWindow failed (code {}), size={}x{}, dst=({}, {}), monitor_rect=({}, {}, {}, {}), {}, ex_style=0x{:X}",
+                    code,
+                    width,
+                    height,
+                    dst_point.x,
+                    dst_point.y,
+                    self.monitor_rect.x,
+                    self.monitor_rect.y,
+                    self.monitor_rect.w,
+                    self.monitor_rect.h,
+                    rect_info,
+                    ex_style
+                );
                 return Err(OverlayError::LayerUpdateFailed { code });
             }
         }
