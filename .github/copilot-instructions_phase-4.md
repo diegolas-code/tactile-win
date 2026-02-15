@@ -1,296 +1,142 @@
-# Phase 4: Single-Monitor MVP with Configuration
+# Phase 4: Single-Monitor MVP & Configuration
 
-## 🎯 Central Objective
-> *"Deliver a production-ready single-monitor window manager with orientation support, window snapping, persistent configuration, and polished UX"*
+> NOTE FOR AI AGENTS AND EDITORS: Any ~~struck-through~~ text in this project’s documentation represents outdated guidance. Follow sections explicitly marked with [ADDED] and the new Phase 4/5 split described here.
 
-Phase 4 perfects the single-monitor experience before tackling multi-monitor complexity.
+~~Previous title: Phase 4A: Advanced Core Features (multi-monitor focused)~~
 
----
-
-## 1. CRITICAL DECISION: Single-Monitor First
-**Before expanding to multi-monitor**, master single-monitor:
-
-- **Complete feature set**: Orientation, snapping, configuration
-- **Production quality**: Error handling, performance, logging
-- **User-friendly**: Configuration UI, validation, feedback
-- **Well-tested**: All edge cases covered for single monitor
-
-**Fundamental principle**: Multi-monitor adds significant complexity. Build a solid foundation first.
+**Status**: Phases 1–3 Complete ✓  
+**Prerequisite**: Working single-monitor prototype with keyboard capture, overlay, and basic positioning  
+**Goal**: [ADDED] Deliver a production-ready MVP for **single-monitor setups only**, including rotation-aware grids and basic configuration UI.
 
 ---
 
-## 2. Monitor Orientation (CRITICAL - Foundation)
-**Adaptive grid layout** based on monitor rotation:
+## [ADDED] Phase 4 Overview
 
-**Orientation Detection**:
-- Landscape (width > height): 3x2 grid (3 cols, 2 rows)
-- Portrait (height > width): 2x3 grid (2 cols, 3 rows)
-- Square (rare): 3x3 grid
+Phase 4 consolidates everything built in Phases 1–3 into a **stable, shippable MVP for single-monitor users only**. Multi-monitor support and broader polish are explicitly deferred to Phase 5.
 
-**Key Requirements**:
-- Detect orientation from work area dimensions
-- Apply 10% threshold to avoid false positives
-- Maintain minimum cell size (480x360) in all orientations
-- Reconfigure grid dynamically when orientation changes
+### [ADDED] Scope Boundary
 
----
+- In scope: **one physical monitor** (the primary or currently active one).
+- Out of scope: Any cross-monitor movement, spanning, or per-monitor configuration.
+- Objective: When this phase is done, a single-monitor user can rely on tactile-win for daily use.
 
-## 3. Window Snapping (Mental Model)
-Before implementing, define what "snapping" means:
+### [ADDED] Core Objectives
 
-**Gap Application**:
-- Screen edges: Optional gap (0-50px) from monitor borders
-- Between cells: Optional gap between multi-cell selections
-- Smart corners: Don't double-apply gaps at intersections
-- Configurable: Enable/disable, adjust size per user preference
+1. **Single-Monitor Robustness**  
+   Ensure that all existing features (overlay, selection, window positioning) behave correctly and predictably for users with exactly one active monitor.
 
-**User Control**:
-```
-GapSettings {
-    enabled: bool,        // Enable snapping with gaps
-    size: u32,           // Gap size in pixels (0-50)
-    screen_edges: bool,  // Apply to borders
-    between_cells: bool, // Apply to cell boundaries
-}
-```
+2. **Rotation-Aware Grids**  
+   Detect monitor orientation (landscape vs. portrait) and adapt:
+   - Grid layout (rows/columns) to maintain useful cell shapes.
+   - Minimum cell-size constraints according to the new orientation.
+
+3. **Basic Single-Monitor Configuration UI**  
+   Provide a minimal but robust way for users to configure the single-monitor setup:
+   - Grid size selection based on monitor resolution/orientation.
+   - Validation to prevent invalid configurations.
+   - Persistence of user preferences.
 
 ---
 
-## 4. Specific Modules
+## [ADDED] Functional Requirements
 
-### 4.1 platform::orientation
-**Single responsibility**: "Tell me if monitor is landscape or portrait"
+### Single-Monitor Only Guarantee
 
-**Concrete tasks**:
-- Detect orientation from work area dimensions
-- Track orientation changes
-- Apply threshold to avoid false positives
-- **DO NOT** implement grid logic here
+- Application must **refuse or gracefully degrade** when multiple monitors are detected (e.g., show a clear message or operate only on the primary monitor without ambiguity).
+- All internal APIs that depend on monitor information should have an explicit **single-monitor code path** (no `Vec<Monitor>` assumptions in Phase 4 logic).
 
-### 4.2 domain::snapping
-**Single responsibility**: "Apply gaps to a grid-selected rectangle"
+### Rotation Handling
 
-**Concrete tasks**:
-- Calculate gap-adjusted rectangles
-- Detect screen edges vs internal cells
-- Handle corner cases (no double gaps)
-- Validate minimum window size after gaps
-- **Critical**: Pure calculation, no Win32 dependencies
+- Use the existing `platform::monitors` layer to:
+  - Detect current orientation (width vs. height) for the active monitor.
+  - React to orientation changes (e.g., system hotplug or rotation events) by recomputing the grid.
+- Grid behavior:
+  - Landscape: prefer default 3×2 or 4×2 layouts as defined in Phase 2.
+  - Portrait: automatically switch to layouts better suited for tall monitors (e.g., 2×3, 2×4), subject to minimum cell-size constraints.
+  - Enforce minimum cell sizes in **both** orientations; reject invalid combinations in the UI.
 
-### 4.3 config::schema
-**Single responsibility**: "Define and validate all user settings"
+### Single-Monitor Configuration UI
 
-**Configuration Areas**:
-- Grid settings (dimensions, adaptive orientation)
-- Gap settings (enable, size, edge/cell behavior)
-- Hotkey configuration
-- Visual appearance (colors, transparency, line width)
-- Behavior settings (timeout, show help)
-
-### 4.4 config::storage
-**Single responsibility**: "Persist configuration to disk"
-
-**Concrete tasks**:
-- Save/load JSON configuration from user directory
-- Create automatic backups before overwriting
-- Validate configuration on load
-- Provide default fallbacks for missing/corrupt files
-- **File location**: `%APPDATA%\tactile-win\config.json`
-
-### 4.5 config::manager
-**Single responsibility**: "Manage runtime configuration state"
-
-**Concrete tasks**:
-- Thread-safe configuration access (Arc<RwLock>)
-- Update configuration with validation
-- Notify components of configuration changes
-- Reset to defaults
-
-### 4.6 ui::config_window
-**Single responsibility**: "Provide user interface for configuration"
-
-**Concrete tasks**:
-- Native Windows dialog or simple window
-- Grid size controls with real-time validation
-- Gap settings controls
-- Hotkey editor
-- Save/Cancel/Reset buttons
-- Visual feedback for invalid settings
+- Provide a simple configuration surface with **minimal user input**:
+  - Grid size selection: limited to sane presets based on monitor resolution/orientation (e.g., 2×2, 3×2, 4×3, etc.).
+  - Minimum cell size configuration for validation purposes.
+- Validation rules:
+  - UI must **not allow** grid sizes that would violate the minimum cell size constraints given the current monitor resolution and orientation.
+  - Provide clear, concise feedback when a chosen grid is invalid ("Cells would be smaller than 300×300 px; choose fewer rows/columns").
+- Persistence:
+  - Save and load **single-monitor** grid configurations using the configuration module introduced in earlier phases (or a minimal JSON/registry-based layer if not yet present).
 
 ---
 
-## 5. Configuration Workflow
+## [ADDED] Suggested Architecture & Modules
 
-### Initial Setup:
-1. Load configuration from disk (or use defaults)
-2. Validate all settings
-3. Apply to application components
-4. Create configuration UI accessible from tray/hotkey
+These changes should extend existing modules without breaking the overall layered design.
 
-### Runtime Updates:
-1. User modifies settings in UI
-2. Validate before applying
-3. Update in-memory configuration
-4. Persist to disk with backup
-5. Notify affected components
-6. Refresh overlays/grids if needed
+### Platform Layer
 
-### Error Handling:
-- Configuration file missing → Use defaults
-- Configuration file corrupted → Restore from backup or use defaults
-- Invalid settings → Reject with clear error message
-- Configuration directory missing → Create automatically
+- `platform::monitors`:
+  - Add helpers to expose **orientation** (landscape/portrait) for the active monitor.
+  - Optionally surface rotation change events or provide a polling-friendly API.
 
----
+### Domain Layer
 
-## 6. Production Polish
+- `domain::grid`:
+  - Accept an orientation hint and grid size to compute cell geometry.
+  - Validate grid configurations based on minimum cell size requirements.
 
-### Error Handling (Comprehensive)
-**Error Categories**:
-- Fatal: Cannot continue (missing Win32 APIs, critical failures)
-- Recoverable: Continue with fallback (config corruption, hotkey conflicts)
-- Silent: Log only (transient issues, minor warnings)
+- `domain::core` (Rect utilities):
+  - Existing rectangle utilities are sufficient for Phase 4.
 
-**Use `thiserror`** for structured errors with user-friendly messages.
+### Config Layer (Single-Monitor Focus)
 
-### Performance Optimization
-**Critical Areas**:
-- Overlay rendering: Cache grids, redraw only on changes
-- Configuration: Load once at startup, lazy updates
-- Memory: Release resources when idle
-- CPU: Minimize message loop overhead
+- Introduce or extend a simple schema for:
+  - `single_monitor.grid_cols`, `single_monitor.grid_rows`.
+  - `single_monitor.min_cell_width`, `single_monitor.min_cell_height`.
+  - The last used/valid configuration for the active monitor.
 
-**Performance Targets**:
-- Overlay display: < 100ms
-- Configuration load: < 100ms
-- Memory (idle): < 50MB
-- CPU (idle): < 1%
+### UI / Companion App
 
-### User Feedback System
-**Notification Types**:
-- Toast notifications: Non-intrusive status messages
-- Error dialogs: Critical errors requiring attention
-- Visual feedback: Highlight selected cells, show validation errors
-
-**Example Notifications**:
-- "Window positioned successfully"
-- "Configuration saved"
-- "Invalid grid selection (window non-resizable)"
-- "Orientation changed: Grid now 2x3"
-
-### Diagnostic Logging
-**Log Strategy**:
-- Use `log` crate with `env_logger`
-- Log file: `%APPDATA%\tactile-win\logs\tactile-win.log`
-- Log rotation: Keep last 5 files, 10MB max each
-- Log levels: TRACE, DEBUG, INFO, WARN, ERROR
+- Minimal configuration window:
+  - Can be launched from the main app or run as a separate executable.
+  - Reads/writes the same configuration used by the core app.
+  - No complex live preview required for Phase 4; simple “Apply/Save” is enough.
 
 ---
 
-## 7. Implementation Order
+## [ADDED] Phase 4 Milestones
 
-### Week 1: Core Features (Days 1-4)
-1. **Orientation detection** (platform::orientation)
-2. **Adaptive grid logic** (domain::grid extension)
-3. **Snapping calculator** (domain::snapping)
-4. **Gap configuration** (config::gap_settings)
+### Milestone 1: Single-Monitor Hardening
 
-### Week 2: Configuration (Days 5-8)
-5. **Configuration schema** (config::schema)
-6. **Configuration storage** (config::storage)
-7. **Configuration manager** (config::manager)
-8. **App controller integration** (app::controller)
+- Audit all monitor-dependent logic to ensure it behaves correctly when only one monitor is present.
+- Add explicit guards preventing accidental use of multi-monitor paths.
+- Add tests/integration checks for:
+  - Single-monitor enumeration.
+  - Basic selection and positioning on various resolutions.
 
-### Week 3: UI and Polish (Days 9-13)
-9. **Configuration UI** (ui::config_window)
-10. **Validation UI feedback** (real-time validation)
-11. **Error handling enhancement** (all modules)
-12. **Performance optimization** (ui::renderer, ui::overlay)
-13. **User feedback system** (ui::notifications, logging)
+### Milestone 2: Rotation & Grid Adaptation
 
-**Total Duration**: 8-13 days
+- Implement orientation detection and grid recomputation.
+- Define a small, opinionated set of grid presets for landscape vs. portrait.
+- Enforce updated minimum cell-size constraints for both orientations.
 
----
+### Milestone 3: Single-Monitor Configuration UI
 
-## 8. Architecture Impact
-
-Phase 4 adds these components:
-
-```
-src/
-├── config/                    # NEW: Configuration management
-│   ├── mod.rs
-│   ├── schema.rs             # Complete configuration structure
-│   ├── storage.rs            # JSON file persistence
-│   └── manager.rs            # Runtime configuration management
-├── platform/
-│   ├── orientation.rs        # NEW: Monitor orientation detection
-│   └── ...existing files...
-├── domain/
-│   ├── snapping.rs           # NEW: Gap calculation logic
-│   └── ...existing files...
-├── ui/
-│   ├── config_window.rs      # NEW: Configuration UI
-│   ├── notifications.rs      # NEW: User feedback system
-│   └── ...existing files...
-├── logging.rs                # NEW: Diagnostic logging setup
-└── tests/
-    └── integration/
-        ├── orientation.rs    # Orientation detection tests
-        ├── snapping.rs       # Snapping logic tests
-        └── config.rs         # Configuration persistence tests
-```
-
-**Key Points**:
-- All new modules are single-monitor focused
-- Configuration system is ready for Phase 5 extension
-- No multi-monitor logic in this phase
+- Implement basic UI for:
+  - Selecting grid size.
+  - Adjusting minimum cell size constraints.
+  - Saving and loading single-monitor configurations.
+- Add lightweight tests/integration checks to ensure settings persist and are honored by the main app.
 
 ---
 
-## 9. WHAT NOT TO THINK ABOUT YET
-🚫 **Phase 5 concerns (avoid these temptations)**:
-- Multi-monitor support
-- Stable MonitorId system
-- Cross-monitor selection
-- Per-monitor configuration
-- Monitor hot-plug handling
-- System tray integration
+## [ADDED] Phase 4 Exit Criteria
 
-If you're thinking about multi-monitor, you're getting ahead of yourself.
+At the end of Phase 4, you should confidently be able to say:
 
----
+- ✅ A single-monitor user can rely on tactile-win for daily work.
+- ✅ Grid behavior adapts correctly when the monitor rotates between landscape and portrait.
+- ✅ Invalid grid sizes are prevented by the configuration UI and validation logic.
+- ✅ Single-monitor settings (grid dimensions and cell constraints) are saved and restored correctly.
+- ✅ No multi-monitor behavior is exposed yet; that is clearly deferred to Phase 5.
 
-## 10. Phase 4 Exit Checklist
-When finished, you should confidently say:
-- ✅ Monitor orientation detection works for landscape/portrait/square
-- ✅ Adaptive grid layout switches automatically with orientation
-- ✅ Window snapping with gaps works and is fully configurable
-- ✅ Configuration persists across application restarts
-- ✅ Configuration UI is intuitive and validates all inputs
-- ✅ Error handling is comprehensive with clear user messages
-- ✅ Performance meets all targets
-- ✅ Diagnostic logging aids troubleshooting
-- ✅ All single-monitor edge cases handled gracefully
-
----
-
-## Expected Result
-
-A **production-ready single-monitor window manager** where:
-1. Users can rotate their monitor and grid adapts automatically
-2. Windows snap to grid with configurable visual gaps
-3. All settings persist and survive application restarts
-4. Configuration UI is simple and intuitive
-5. Error handling is robust and informative
-6. Performance is smooth and responsive
-
-With this foundation, Phase 5 (multi-monitor) becomes a natural extension rather than a rewrite.
-
----
-
-## Sources
-- Phase 1-3 implementation and lessons learned
-- Single-monitor use cases and user feedback
-- Windows desktop management best practices
-- Configuration system design patterns
+Multi-monitor support, per-monitor grid configurations, and broader polish (tray icon, help system, distribution) are now fully owned by **Phase 5** in `copilot-instructions_phase-5.md`.

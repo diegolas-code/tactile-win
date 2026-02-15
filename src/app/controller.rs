@@ -3,18 +3,30 @@
 //! The controller orchestrates between input, domain, UI, and platform layers.
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
-use crate::app::state::{AppState, StateEvent, StateMachine};
+use crate::app::state::{ AppState, StateEvent, StateMachine };
+use crate::config::{ GridConfigError, GridConfigStore };
+use crate::config::grid::{ GridBounds, MonitorGridConfig };
 use crate::domain::grid::Grid;
-use crate::input::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard};
-use crate::platform::monitors::{Monitor, MonitorError, enumerate_monitors};
-use crate::ui::{OverlayError, OverlayManager};
-use std::sync::{Arc, Mutex};
-use windows::Win32::Foundation::{HWND, WPARAM};
+use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
+use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
+use crate::ui::{ OverlayError, OverlayManager };
+use std::sync::{ Arc, Mutex };
+use windows::Win32::Foundation::{ HWND, WPARAM };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT, MOD_CONTROL, RegisterHotKey, UnregisterHotKey, VK_F9,
+    MOD_ALT,
+    MOD_CONTROL,
+    RegisterHotKey,
+    UnregisterHotKey,
+    VK_F9,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage, WM_HOTKEY, WM_QUIT,
+    DispatchMessageW,
+    MSG,
+    PM_REMOVE,
+    PeekMessageW,
+    TranslateMessage,
+    WM_HOTKEY,
+    WM_QUIT,
 };
 
 const MAIN_HOTKEY_ID: i32 = 1;
@@ -24,8 +36,6 @@ const MAIN_HOTKEY_ID: i32 = 1;
 pub enum AppError {
     /// Monitor enumeration failed
     MonitorError(MonitorError),
-    /// Failed to create grids for monitors
-    GridCreationFailed(String),
     /// No suitable monitors found for grid positioning
     NoSuitableMonitors,
     /// Global hotkey registration failed
@@ -34,6 +44,8 @@ pub enum AppError {
     OverlayError(OverlayError),
     /// Keyboard capture failed
     KeyboardCaptureError(KeyboardCaptureError),
+    /// Configuration store failure
+    ConfigStoreError(GridConfigError),
 }
 
 impl From<MonitorError> for AppError {
@@ -58,14 +70,20 @@ impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::MonitorError(e) => write!(f, "Monitor error: {:?}", e),
-            AppError::GridCreationFailed(msg) => write!(f, "Grid creation failed: {}", msg),
             AppError::NoSuitableMonitors => write!(f, "No suitable monitors for grid positioning"),
             AppError::HotkeyRegistrationFailed(msg) => {
                 write!(f, "Hotkey registration failed: {}", msg)
             }
             AppError::OverlayError(e) => write!(f, "Overlay error: {:?}", e),
             AppError::KeyboardCaptureError(e) => write!(f, "Keyboard capture error: {}", e),
+            AppError::ConfigStoreError(e) => write!(f, "Configuration error: {}", e),
         }
+    }
+}
+
+impl From<GridConfigError> for AppError {
+    fn from(err: GridConfigError) -> Self {
+        AppError::ConfigStoreError(err)
     }
 }
 
@@ -100,29 +118,9 @@ impl OverlayManagerGuard {
         self.manager.hide_all();
     }
 
-    /// Toggle overlay visibility
-    pub fn toggle(&mut self) {
-        self.manager.toggle();
-    }
-
-    /// Check if overlays are visible
-    pub fn is_visible(&self) -> bool {
-        self.manager.is_visible()
-    }
-
-    /// Get overlay count
-    pub fn overlay_count(&self) -> usize {
-        self.manager.overlay_count()
-    }
-
     /// Set which monitor is active (shows letters)
     pub fn set_active_monitor(&mut self, monitor_index: usize) {
         self.manager.set_active_monitor(monitor_index);
-    }
-
-    /// Get the currently active monitor
-    pub fn get_active_monitor(&self) -> Option<usize> {
-        self.manager.get_active_monitor()
     }
 
     /// Render grid content for all overlays
@@ -169,11 +167,6 @@ impl KeyboardCaptureManager {
         self.capture = None;
     }
 
-    /// Check if currently capturing
-    pub fn is_capturing(&self) -> bool {
-        self.capture.as_ref().is_some_and(|c| c.is_capturing())
-    }
-
     /// Get the message ID for keyboard events
     pub fn message_id() -> u32 {
         KeyboardCaptureGuard::message_id()
@@ -206,6 +199,8 @@ pub struct AppController {
     monitors: Vec<Monitor>,
     /// Grid instances per monitor (stable configuration)
     grids: Vec<Grid>,
+    /// Persisted grid configuration per monitor
+    config_store: GridConfigStore,
     /// Main window handle for message processing
     main_window: HWND,
     /// Tracks whether the hotkey was registered successfully
@@ -221,13 +216,9 @@ impl AppController {
 
         unsafe {
             let modifiers = MOD_CONTROL | MOD_ALT;
-            RegisterHotKey(
-                self.main_window,
-                MAIN_HOTKEY_ID,
-                modifiers,
-                u32::from(VK_F9.0),
-            )
-            .map_err(|err| AppError::HotkeyRegistrationFailed(format!("{}", err)))?;
+            RegisterHotKey(self.main_window, MAIN_HOTKEY_ID, modifiers, u32::from(VK_F9.0)).map_err(
+                |err| AppError::HotkeyRegistrationFailed(format!("{}", err))
+            )?;
         }
 
         self.hotkey_registered = true;
@@ -255,35 +246,38 @@ impl AppController {
     /// AppController instance or AppError if initialization fails
     pub fn new(main_window: HWND) -> Result<Self, AppError> {
         // Initialize monitors using Phase 1 infrastructure
-        let monitors = enumerate_monitors()?;
+        let mut monitors = enumerate_monitors()?;
         if monitors.is_empty() {
             return Err(AppError::NoSuitableMonitors);
         }
 
-        // Create grids for each monitor using Phase 2 domain logic
-        let mut grids = Vec::new();
-        for (i, monitor) in monitors.iter().enumerate() {
-            match Grid::new(2, 3, monitor.work_area) {
-                // 2 rows, 3 columns (Q W E / A S D)
-                Ok(grid) => {
-                    grids.push(grid);
-                    println!(
-                        "Monitor {}: Created 2x3 grid (2 rows, 3 cols) for {}x{} area",
-                        i, monitor.work_area.w, monitor.work_area.h
-                    );
-                }
-                Err(e) => {
-                    return Err(AppError::GridCreationFailed(format!(
-                        "Monitor {}: {:?}",
-                        i, e
-                    )));
-                }
+        // Phase 4 MVP: Single-monitor enforcement
+        // Multi-monitor support is deferred to Phase 5
+        if monitors.len() > 1 {
+            println!("\n╔═══════════════════════════════════════════════════════════╗");
+            println!("║  ⚠️  MULTIPLE MONITORS DETECTED                          ║");
+            println!("╠═══════════════════════════════════════════════════════════╣");
+            println!("║  Phase 4 MVP operates on PRIMARY MONITOR only.            ║");
+            println!("║  Multi-monitor support is coming in Phase 5.              ║");
+            println!("║                                                           ║");
+            println!(
+                "║  Detected monitors: {}                                     ║",
+                monitors.len()
+            );
+            println!("║  Using: Primary monitor only                              ║");
+            println!("╚═══════════════════════════════════════════════════════════╝\n");
+
+            // Filter to keep only the primary monitor
+            monitors.retain(|m| m.is_primary);
+
+            if monitors.is_empty() {
+                return Err(AppError::NoSuitableMonitors);
             }
         }
 
-        if grids.is_empty() {
-            return Err(AppError::NoSuitableMonitors);
-        }
+        // Initialize configuration store and build grids per monitor
+        let config_store = GridConfigStore::new(&monitors)?;
+        let grids = config_store.build_grids(&monitors)?;
 
         // Initialize RAII-wrapped components
         let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
@@ -300,6 +294,7 @@ impl AppController {
             keyboard_capture,
             monitors,
             grids,
+            config_store,
             main_window,
             hotkey_registered: false,
         };
@@ -326,17 +321,6 @@ impl AppController {
         self.monitors.len()
     }
 
-    /// Gets a reference to a specific monitor
-    ///
-    /// # Arguments
-    /// * `index` - Monitor index
-    ///
-    /// # Returns
-    /// Monitor reference or None if index is invalid
-    pub fn get_monitor(&self, index: usize) -> Option<&Monitor> {
-        self.monitors.get(index)
-    }
-
     /// Gets a reference to a specific grid
     ///
     /// # Arguments
@@ -346,6 +330,69 @@ impl AppController {
     /// Grid reference or None if index is invalid
     pub fn get_grid(&self, index: usize) -> Option<&Grid> {
         self.grids.get(index)
+    }
+
+    fn log_monitor_diagnostics(&self, list_index: usize, monitor: &Monitor, grid: &Grid) {
+        let (actual_rows, actual_cols) = grid.dimensions();
+        let (cell_width, cell_height) = grid.cell_size();
+        let configs = self.config_store.configs();
+        let config = configs
+            .iter()
+            .find(|cfg| cfg.monitor_index == monitor.index)
+            .or_else(|| configs.get(list_index));
+
+        match config {
+            Some(cfg) => {
+                let min_cell_width = MonitorGridConfig::sanitize_cell_dimension(cfg.min_cell_width);
+                let min_cell_height = MonitorGridConfig::sanitize_cell_dimension(
+                    cfg.min_cell_height
+                );
+
+                match GridBounds::for_monitor(monitor, min_cell_width, min_cell_height) {
+                    Ok(bounds) => {
+                        println!(
+                            "Overlay diagnostics: config {}x{} -> realized {}x{} cells ({}x{} px) | rows {}-{} | cols {}-{} | min cell >= {}x{} px",
+                            cfg.rows,
+                            cfg.cols,
+                            actual_rows,
+                            actual_cols,
+                            cell_width,
+                            cell_height,
+                            bounds.min_rows,
+                            bounds.max_rows,
+                            bounds.min_cols,
+                            bounds.max_cols,
+                            min_cell_width,
+                            min_cell_height
+                        );
+                    }
+                    Err(err) => {
+                        println!(
+                            "Overlay diagnostics: config {}x{} (realized {}x{} cells at {}x{} px) but monitor cannot satisfy min cell {}x{} px ({})",
+                            cfg.rows,
+                            cfg.cols,
+                            actual_rows,
+                            actual_cols,
+                            cell_width,
+                            cell_height,
+                            min_cell_width,
+                            min_cell_height,
+                            err
+                        );
+                    }
+                }
+            }
+            None => {
+                println!(
+                    "Overlay diagnostics: no persisted config for monitor {}; realized grid {}x{} with cells {}x{} px",
+                    monitor.index,
+                    actual_rows,
+                    actual_cols,
+                    cell_width,
+                    cell_height
+                );
+            }
+        }
     }
 
     /// Processes a state event using the state machine
@@ -361,30 +408,6 @@ impl AppController {
         let new_state = StateMachine::process_event(current_state, event, self.monitor_count());
         *state_guard = new_state.clone();
         new_state
-    }
-
-    /// Handle state transition side effects (must be called after process_event)
-    pub fn handle_state_transition(&mut self, old_state: &AppState, new_state: &AppState) {
-        match (old_state, new_state) {
-            (AppState::Idle, AppState::Selecting(_)) => {
-                println!("CONTROLLER: Transitioning to Selecting state - showing overlays");
-                // Show overlays when entering selection mode
-                self.overlay_manager.show_all();
-                if self.overlay_manager.overlay_count() > 0 {
-                    self.overlay_manager.set_active_monitor(0);
-                }
-                println!("CONTROLLER: Overlays shown");
-            }
-            (AppState::Selecting(_), AppState::Idle) => {
-                println!("CONTROLLER: Transitioning to Idle state - hiding overlays");
-                // Hide overlays when exiting selection mode
-                self.overlay_manager.hide_all();
-                println!("CONTROLLER: Overlays hidden");
-            }
-            _ => {
-                // No UI changes needed for other transitions
-            }
-        }
     }
 
     /// Handles hotkey press events
@@ -406,10 +429,9 @@ impl AppController {
                     "Switched to Selecting state on monitor {}",
                     selecting.active_monitor_index
                 );
-                // Show overlays before marking the active monitor
+                // Show overlays and start keyboard capture
+                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
                 self.overlay_manager.show_all();
-                self.overlay_manager
-                    .set_active_monitor(selecting.active_monitor_index);
 
                 // Start keyboard capture
                 if let Err(e) = self.keyboard_capture.start_capture() {
@@ -436,7 +458,8 @@ impl AppController {
                 if grid.contains_key(key) {
                     println!(
                         "Valid grid key: '{}' on monitor {}",
-                        key, selecting.active_monitor_index
+                        key,
+                        selecting.active_monitor_index
                     );
 
                     // Convert key to coordinates
@@ -491,8 +514,7 @@ impl AppController {
         if let AppState::Selecting(selecting) = new_state {
             println!("Switched to monitor {}", selecting.active_monitor_index);
             // Update overlay rendering to show new active monitor
-            self.overlay_manager
-                .set_active_monitor(selecting.active_monitor_index);
+            self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
             self.overlay_manager.render_grids();
         }
     }
@@ -536,7 +558,10 @@ impl AppController {
             if let Some((top_left, bottom_right)) = selecting.selection.get_normalized_coords() {
                 println!(
                     "DEBUG: Got normalized coords: ({},{}) to ({},{})",
-                    top_left.row, top_left.col, bottom_right.row, bottom_right.col
+                    top_left.row,
+                    top_left.col,
+                    bottom_right.row,
+                    bottom_right.col
                 );
 
                 // Get the grid for the active monitor
@@ -562,10 +587,12 @@ impl AppController {
                                     println!("Active window: {}", window_info.title);
 
                                     // Position the window
-                                    match crate::platform::window::position_window(
-                                        window_info.handle,
-                                        target_rect,
-                                    ) {
+                                    match
+                                        crate::platform::window::position_window(
+                                            window_info.handle,
+                                            target_rect
+                                        )
+                                    {
                                         Ok(_) => {
                                             println!("✓ Window positioned successfully");
                                         }
@@ -662,14 +689,6 @@ impl AppController {
         false
     }
 
-    /// Gets the keyboard capture message ID for Win32 message processing
-    ///
-    /// # Returns
-    /// Custom Windows message ID that keyboard events are posted to
-    pub fn get_keyboard_message_id() -> u32 {
-        KeyboardCaptureManager::message_id()
-    }
-
     /// Main event loop for processing keyboard events and timeouts
     pub fn run(&mut self) -> Result<(), AppError> {
         println!("AppController: Starting main event loop");
@@ -688,6 +707,11 @@ impl AppController {
                 monitor.work_area.x,
                 monitor.work_area.y
             );
+            if let Some(grid) = self.grids.get(i) {
+                self.log_monitor_diagnostics(i, monitor, grid);
+            } else {
+                println!("Overlay diagnostics: missing grid entry for monitor {}", monitor.index);
+            }
         }
 
         println!("\n=== APPLICATION READY ===");
@@ -716,7 +740,7 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
-                    } else if msg.message == WM_HOTKEY && msg.wParam.0 == MAIN_HOTKEY_ID as usize {
+                    } else if msg.message == WM_HOTKEY && msg.wParam.0 == (MAIN_HOTKEY_ID as usize) {
                         // Hotkey pressed (Ctrl+Alt+F9) - toggle state
                         println!("Ctrl+Alt+F9 pressed! Toggling overlay...");
                         self.handle_hotkey();

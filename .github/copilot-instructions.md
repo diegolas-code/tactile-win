@@ -2,6 +2,8 @@
 
 This document serves as comprehensive context for AI development assistants working on the `tactile-win` project, consolidating architecture and functional specifications.
 
+> NOTE FOR AI AGENTS AND EDITORS: Any ~~struck-through~~ text in this and the phase documents represents outdated guidance. Follow the adjacent [ADDED] notes and the newer Phase 4 and Phase 5 documents instead.
+
 ---
 
 ## Project Overview
@@ -315,22 +317,27 @@ enum AppState {
 10. Letter capture
 11. Single-monitor window positioning
 
-**Phase 4 – Single-Monitor MVP**
+~~**Phase 4 – Advanced Features**~~
 
-1. Monitor orientation support (landscape/portrait)
-2. Window snapping with configurable gaps
-3. Configuration system with persistence
-4. Configuration UI
-5. Production polish (error handling, logging, notifications)
+~~12. Cross-monitor selection and window movement~~
+~~13. Persistent configuration~~
+~~14. On-screen help~~
+~~15. System tray integration~~
+~~16. Final polish~~
 
-**Phase 5 – Multi-Monitor and Distribution**
+**[ADDED] Phase 4 – Single-Monitor MVP**
 
-12. Multi-monitor support with stable MonitorId
-13. Cross-monitor selection and window movement
-14. Per-monitor configuration
-15. System tray integration
-16. Help system and documentation
-17. Production distribution (installer, auto-updates)
+12. Harden single-monitor behavior (no multi-monitor support yet)
+13. Handle monitor rotation and adapt grid layouts/constraints
+14. Add optional snapping-to-grid behavior with configurable gaps
+15. Provide basic configuration UI for single-monitor grids and gaps
+
+**[ADDED] Phase 5 – Multi-Monitor & Polish**
+
+16. Cross-monitor selection and window movement
+17. Per-monitor grid configuration and persistence
+18. Advanced configuration UI (multi-monitor aware)
+19. System tray integration, help, and visual polish
 
 ### Cross-Monitor Complexity Warning
 
