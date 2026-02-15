@@ -5,8 +5,8 @@
     {
       "monitor_id": "primary",
       "grid": {
-        "rows": 2,
-        "cols": 3,
+        "rows": 3,
+        "cols": 4,
         "min_cell_width": 300,
         "min_cell_height": 300
       }
