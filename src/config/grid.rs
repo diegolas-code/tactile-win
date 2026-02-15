@@ -33,8 +33,8 @@ pub struct MonitorGridConfig {
 impl MonitorGridConfig {
     pub const MIN_COLS: u32 = 2;
     pub const MIN_ROWS: u32 = 2;
-    pub const MAX_ROWS: u32 = 3;
-    pub const MAX_COLS: u32 = 4;
+    pub const MAX_ROWS: u32 = 4;
+    pub const MAX_COLS: u32 = 8;
     pub const DEFAULT_MIN_CELL: u32 = 300;
     pub const MIN_CELL_LIMIT: u32 = 200;
     pub const MAX_CELL_LIMIT: u32 = 1200;
