@@ -4,7 +4,7 @@
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
 use crate::app::state::{ AppState, StateEvent, StateMachine };
-use crate::config::{ GridConfigError, GridConfigStore, MonitorGridConfig };
+use crate::config::{ GridConfigError, GridConfigStore };
 use crate::domain::grid::Grid;
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
@@ -35,8 +35,6 @@ const MAIN_HOTKEY_ID: i32 = 1;
 pub enum AppError {
     /// Monitor enumeration failed
     MonitorError(MonitorError),
-    /// Failed to create grids for monitors
-    GridCreationFailed(String),
     /// No suitable monitors found for grid positioning
     NoSuitableMonitors,
     /// Global hotkey registration failed
@@ -71,7 +69,6 @@ impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::MonitorError(e) => write!(f, "Monitor error: {:?}", e),
-            AppError::GridCreationFailed(msg) => write!(f, "Grid creation failed: {}", msg),
             AppError::NoSuitableMonitors => write!(f, "No suitable monitors for grid positioning"),
             AppError::HotkeyRegistrationFailed(msg) => {
                 write!(f, "Hotkey registration failed: {}", msg)
@@ -120,29 +117,9 @@ impl OverlayManagerGuard {
         self.manager.hide_all();
     }
 
-    /// Toggle overlay visibility
-    pub fn toggle(&mut self) {
-        self.manager.toggle();
-    }
-
-    /// Check if overlays are visible
-    pub fn is_visible(&self) -> bool {
-        self.manager.is_visible()
-    }
-
-    /// Get overlay count
-    pub fn overlay_count(&self) -> usize {
-        self.manager.overlay_count()
-    }
-
     /// Set which monitor is active (shows letters)
     pub fn set_active_monitor(&mut self, monitor_index: usize) {
         self.manager.set_active_monitor(monitor_index);
-    }
-
-    /// Get the currently active monitor
-    pub fn get_active_monitor(&self) -> Option<usize> {
-        self.manager.get_active_monitor()
     }
 
     /// Render grid content for all overlays
@@ -189,11 +166,6 @@ impl KeyboardCaptureManager {
         self.capture = None;
     }
 
-    /// Check if currently capturing
-    pub fn is_capturing(&self) -> bool {
-        self.capture.as_ref().map_or(false, |c| c.is_capturing())
-    }
-
     /// Get the message ID for keyboard events
     pub fn message_id() -> u32 {
         KeyboardCaptureGuard::message_id()
@@ -226,8 +198,6 @@ pub struct AppController {
     monitors: Vec<Monitor>,
     /// Grid instances per monitor (stable configuration)
     grids: Vec<Grid>,
-    /// Persisted grid configuration per monitor
-    config_store: GridConfigStore,
     /// Main window handle for message processing
     main_window: HWND,
     /// Tracks whether the hotkey was registered successfully
@@ -303,8 +273,7 @@ impl AppController {
         }
 
         // Initialize configuration store and build grids per monitor
-        let config_store = GridConfigStore::new(&monitors)?;
-        let grids = config_store.build_grids(&monitors)?;
+        let grids = GridConfigStore::new(&monitors)?.build_grids(&monitors)?;
 
         // Initialize RAII-wrapped components
         let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
@@ -321,7 +290,6 @@ impl AppController {
             keyboard_capture,
             monitors,
             grids,
-            config_store,
             main_window,
             hotkey_registered: false,
         };
@@ -348,17 +316,6 @@ impl AppController {
         self.monitors.len()
     }
 
-    /// Gets a reference to a specific monitor
-    ///
-    /// # Arguments
-    /// * `index` - Monitor index
-    ///
-    /// # Returns
-    /// Monitor reference or None if index is invalid
-    pub fn get_monitor(&self, index: usize) -> Option<&Monitor> {
-        self.monitors.get(index)
-    }
-
     /// Gets a reference to a specific grid
     ///
     /// # Arguments
@@ -383,27 +340,6 @@ impl AppController {
         let new_state = StateMachine::process_event(current_state, event, self.monitor_count());
         *state_guard = new_state.clone();
         new_state
-    }
-
-    /// Handle state transition side effects (must be called after process_event)
-    pub fn handle_state_transition(&mut self, old_state: &AppState, new_state: &AppState) {
-        match (old_state, new_state) {
-            (AppState::Idle, AppState::Selecting(_)) => {
-                println!("CONTROLLER: Transitioning to Selecting state - showing overlays");
-                // Show overlays when entering selection mode
-                self.overlay_manager.show_all();
-                println!("CONTROLLER: Overlays shown");
-            }
-            (AppState::Selecting(_), AppState::Idle) => {
-                println!("CONTROLLER: Transitioning to Idle state - hiding overlays");
-                // Hide overlays when exiting selection mode
-                self.overlay_manager.hide_all();
-                println!("CONTROLLER: Overlays hidden");
-            }
-            _ => {
-                // No UI changes needed for other transitions
-            }
-        }
     }
 
     /// Handles hotkey press events
@@ -685,14 +621,6 @@ impl AppController {
             }
         }
         false
-    }
-
-    /// Gets the keyboard capture message ID for Win32 message processing
-    ///
-    /// # Returns
-    /// Custom Windows message ID that keyboard events are posted to
-    pub fn get_keyboard_message_id() -> u32 {
-        KeyboardCaptureManager::message_id()
     }
 
     /// Main event loop for processing keyboard events and timeouts

@@ -50,14 +50,6 @@ impl SelectingState {
         self.selection_started.elapsed().as_secs() >= 30
     }
 
-    /// Gets the remaining time before timeout
-    ///
-    /// # Returns
-    /// Seconds remaining before automatic timeout
-    pub fn remaining_timeout(&self) -> u64 {
-        (30_u64).saturating_sub(self.selection_started.elapsed().as_secs())
-    }
-
     /// Switches to a different monitor during selection
     ///
     /// # Arguments
@@ -80,8 +72,6 @@ impl Default for AppState {
 pub enum StateEvent {
     /// Hotkey was pressed
     HotkeyPressed,
-    /// Valid grid key was pressed
-    KeyPressed(char),
     /// Navigation key was pressed (arrow keys)
     Navigation(NavigationDirection),
     /// Escape key was pressed or selection cancelled
@@ -105,11 +95,6 @@ pub enum NavigationDirection {
 pub struct StateMachine;
 
 impl StateMachine {
-    /// Create a new state machine instance
-    pub fn new() -> Self {
-        Self
-    }
-
     /// Processes a state event and returns the new state
     ///
     /// # Arguments
@@ -122,7 +107,7 @@ impl StateMachine {
     pub fn process_event(
         current_state: AppState,
         event: StateEvent,
-        monitor_count: usize,
+        monitor_count: usize
     ) -> AppState {
         match (current_state, event) {
             // From Idle state
@@ -133,12 +118,6 @@ impl StateMachine {
             }
 
             // From Selecting state
-            (AppState::Selecting(selecting), StateEvent::KeyPressed(_key)) => {
-                // Process key press in selection
-                // Note: Grid validation will happen in controller
-                AppState::Selecting(selecting)
-            }
-
             (AppState::Selecting(mut selecting), StateEvent::Navigation(direction)) => {
                 // Handle monitor navigation
                 let new_monitor_index = match direction {
@@ -215,7 +194,7 @@ mod tests {
         let state = StateMachine::process_event(
             AppState::Idle,
             StateEvent::HotkeyPressed,
-            2, // 2 monitors
+            2 // 2 monitors
         );
 
         assert!(matches!(state, AppState::Selecting(_)));
@@ -233,7 +212,7 @@ mod tests {
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3, // 3 monitors
+            3 // 3 monitors
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -252,7 +231,7 @@ mod tests {
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3, // 3 monitors (indices 0, 1, 2)
+            3 // 3 monitors (indices 0, 1, 2)
         );
 
         if let AppState::Selecting(selecting) = new_state {

@@ -90,16 +90,6 @@ impl MonitorGridConfig {
         value.clamp(Self::MIN_CELL_LIMIT, Self::MAX_CELL_LIMIT)
     }
 
-    pub fn reset_to_defaults(&mut self, monitor: &Monitor) {
-        let (cols, rows) = Self::orientation_defaults(
-            ScreenOrientation::from_rect(&monitor.work_area)
-        );
-        self.cols = cols;
-        self.rows = rows;
-        self.min_cell_width = Self::DEFAULT_MIN_CELL;
-        self.min_cell_height = Self::DEFAULT_MIN_CELL;
-    }
-
     pub fn apply_bounds_from_monitor(&mut self, monitor: &Monitor) -> Result<(), GridConfigError> {
         let bounds = GridBounds::for_monitor(monitor, self.min_cell_width, self.min_cell_height)?;
         self.cols = bounds.clamp_cols(self.cols);
@@ -124,14 +114,6 @@ impl MonitorGridConfig {
             monitor_index: monitor.index,
             source,
         })
-    }
-
-    pub fn bounds_for_monitor(
-        monitor: &Monitor,
-        min_cell_width: u32,
-        min_cell_height: u32
-    ) -> Result<GridBounds, GridConfigError> {
-        GridBounds::for_monitor(monitor, min_cell_width, min_cell_height)
     }
 }
 
@@ -263,58 +245,6 @@ impl GridConfigStore {
         // Persist defaults so the file exists for subsequent runs
         store.save_to_disk()?;
         Ok(store)
-    }
-
-    pub fn configs(&self) -> &[MonitorGridConfig] {
-        &self.configs
-    }
-
-    pub fn config_for(&self, monitor_index: usize) -> Option<&MonitorGridConfig> {
-        self.configs.get(monitor_index)
-    }
-
-    pub fn update_configs(
-        &mut self,
-        monitors: &[Monitor],
-        updated: Vec<MonitorGridConfig>
-    ) -> Result<(), GridConfigError> {
-        if updated.len() != monitors.len() || updated.len() != self.configs.len() {
-            return Err(GridConfigError::MonitorMismatch);
-        }
-
-        let mut mutated = false;
-
-        for cfg in updated {
-            let monitor_index = cfg.monitor_index;
-            let monitor = monitors.get(monitor_index).ok_or(GridConfigError::MonitorMismatch)?;
-            if monitor.index != monitor_index {
-                return Err(GridConfigError::MonitorMismatch);
-            }
-
-            let settings = StoredGridSettings {
-                rows: cfg.rows,
-                cols: cfg.cols,
-                min_cell_width: cfg.min_cell_width,
-                min_cell_height: cfg.min_cell_height,
-            };
-
-            let (sanitized, changed) = Self::config_from_settings(monitor, settings)?;
-            mutated |= changed;
-
-            if let Some(slot) = self.configs.get_mut(monitor_index) {
-                *slot = sanitized;
-            } else {
-                return Err(GridConfigError::MonitorMismatch);
-            }
-        }
-
-        self.monitor_ids = Self::monitor_ids(monitors);
-
-        if mutated {
-            println!("Grid configuration updates contained invalid values; applied safe defaults.");
-        }
-
-        self.save_to_disk()
     }
 
     pub fn build_grids(&self, monitors: &[Monitor]) -> Result<Vec<Grid>, GridConfigError> {
