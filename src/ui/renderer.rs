@@ -3,9 +3,8 @@
 //! Implements grid visualization with letter labels using tiny-skia for high-performance
 //! rendering. Separates layout calculation from rendering for better testability.
 
-use std::collections::HashMap;
-
-use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke, Transform};
+use ab_glyph::{ point, Font, FontArc, PxScale };
+use tiny_skia::{ Color, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke, Transform };
 
 use crate::domain::core::Rect;
 use crate::domain::grid::Grid;
@@ -17,8 +16,10 @@ pub enum RendererError {
     #[error("Failed to create pixmap for rendering")]
     PixmapCreationFailed,
 
-    #[error("Invalid grid dimensions: {width}x{height}")]
-    InvalidGridDimensions { width: i32, height: i32 },
+    #[error("Invalid grid dimensions: {width}x{height}")] InvalidGridDimensions {
+        width: i32,
+        height: i32,
+    },
 
     #[error("Rendering operation failed")]
     RenderingFailed,
@@ -130,13 +131,14 @@ impl GridLayout {
         let (rows, cols) = grid.dimensions();
         let cell_width = (canvas_rect.w as f32) / (cols as f32);
         let cell_height = (canvas_rect.h as f32) / (rows as f32);
-        let font_size = (32.0 * dpi_scale).max(24.0);
+        let min_dimension = cell_width.min(cell_height);
+        let font_size = (min_dimension * 0.36).max(12.0 * dpi_scale);
         let letter_color = Color::from_rgba8(255, 255, 255, 255); // Fully opaque white
 
         // Get all valid grid positions from keyboard layout
         for row in 0..rows {
             for col in 0..cols {
-                let coords = GridCoords::new(col, row);
+                let coords = GridCoords::new(row, col);
                 if let Ok(letter) = grid.key_for_coords(coords) {
                     // Calculate cell center
                     let cell_center_x = ((col as f32) + 0.5) * cell_width;
@@ -147,9 +149,8 @@ impl GridLayout {
                         (col as f32) * cell_width,
                         (row as f32) * cell_height,
                         cell_width,
-                        cell_height,
-                    )
-                    .unwrap();
+                        cell_height
+                    ).unwrap();
 
                     self.letters.push(LetterPosition {
                         letter,
@@ -168,26 +169,32 @@ impl GridLayout {
 /// High-performance grid renderer using tiny-skia
 #[derive(Debug)]
 pub struct GridRenderer {
-    /// Cached font data for text rendering
-    font_cache: HashMap<u32, Vec<u8>>, // font_size -> font_data
+    font: FontArc,
 }
 
 impl GridRenderer {
     /// Create a new grid renderer
     pub fn new() -> Self {
-        Self {
-            font_cache: HashMap::new(),
-        }
+        const FONT_BYTES: &[u8] = include_bytes!(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/IBMPlexMono-Bold.ttf")
+        );
+
+        let font = FontArc::try_from_slice(FONT_BYTES).expect(
+            "IBMPlexMono-Bold.ttf must be present in assets/fonts"
+        );
+
+        Self { font }
     }
 
     /// Render a grid layout to a pixmap
     pub fn render_layout(&mut self, layout: &GridLayout) -> Result<Pixmap, RendererError> {
         // Create pixmap for rendering
-        let mut pixmap = Pixmap::new(layout.canvas_width as u32, layout.canvas_height as u32)
-            .ok_or(RendererError::PixmapCreationFailed)?;
+        let mut pixmap = Pixmap::new(layout.canvas_width as u32, layout.canvas_height as u32).ok_or(
+            RendererError::PixmapCreationFailed
+        )?;
 
-        // Clear with transparent background
-        pixmap.fill(Color::TRANSPARENT);
+        // Mild translucent background for contrast
+        pixmap.fill(Color::from_rgba8(8, 12, 24, 180));
 
         // Render grid lines
         self.render_lines(&mut pixmap, &layout.lines)?;
@@ -227,7 +234,7 @@ impl GridRenderer {
     fn render_letters(
         &mut self,
         pixmap: &mut Pixmap,
-        letters: &[LetterPosition],
+        letters: &[LetterPosition]
     ) -> Result<(), RendererError> {
         for letter_pos in letters {
             self.render_single_letter(pixmap, letter_pos)?;
@@ -240,39 +247,55 @@ impl GridRenderer {
     fn render_single_letter(
         &mut self,
         pixmap: &mut Pixmap,
-        letter_pos: &LetterPosition,
+        letter_pos: &LetterPosition
     ) -> Result<(), RendererError> {
-        // For now, render a simple filled circle as a placeholder for the letter
-        // In a full implementation, we would use a font rasterizer like rusttype or ab_glyph
-        let radius = letter_pos.font_size / 4.0;
+        let width = pixmap.width() as i32;
+        let height = pixmap.height() as i32;
+        let stride = pixmap.width() as usize;
+        let scale = PxScale::from(letter_pos.font_size);
+        let glyph_id = self.font.glyph_id(letter_pos.letter);
 
-        let mut path_builder = PathBuilder::new();
-        if SkiaRect::from_xywh(
-            letter_pos.x - radius,
-            letter_pos.y - radius,
-            radius * 2.0,
-            radius * 2.0,
-        )
-        .is_some()
-        {
-            path_builder.push_circle(letter_pos.x, letter_pos.y, radius);
+        let initial_position = glyph_id.with_scale_and_position(
+            scale,
+            point(letter_pos.x, letter_pos.y)
+        );
 
-            if let Some(path) = path_builder.finish() {
-                let mut paint = Paint::default();
-                paint.set_color(letter_pos.color);
+        let Some(initial_outline) = self.font.outline_glyph(initial_position) else {
+            return Ok(());
+        };
 
-                pixmap.fill_path(
-                    &path,
-                    &paint,
-                    FillRule::Winding,
-                    Transform::identity(),
-                    None,
-                );
+        let initial_bounds = initial_outline.px_bounds();
+        let center_x = (initial_bounds.min.x + initial_bounds.max.x) * 0.5;
+        let center_y = (initial_bounds.min.y + initial_bounds.max.y) * 0.5;
+        let offset_x = letter_pos.x - center_x;
+        let offset_y = letter_pos.y - center_y;
 
-                // TODO: Add actual text rendering here
-                // This would require integrating a font library like rusttype
-                // For Phase 3, the circles serve as visual placeholders
-            }
+        let positioned = glyph_id.with_scale_and_position(
+            scale,
+            point(letter_pos.x + offset_x, letter_pos.y + offset_y)
+        );
+
+        if let Some(outline) = self.font.outline_glyph(positioned) {
+            let bounds = outline.px_bounds();
+            let origin_x = bounds.min.x.floor() as i32;
+            let origin_y = bounds.min.y.floor() as i32;
+            let data = pixmap.data_mut();
+
+            outline.draw(|x, y, coverage| {
+                if coverage <= 0.0 {
+                    return;
+                }
+
+                let px = origin_x + (x as i32);
+                let py = origin_y + (y as i32);
+
+                if px < 0 || py < 0 || px >= width || py >= height {
+                    return;
+                }
+
+                let idx = ((py as usize) * stride + (px as usize)) * 4;
+                blend_pixel(&mut data[idx..idx + 4], &letter_pos.color, coverage);
+            });
         }
 
         Ok(())
@@ -297,23 +320,53 @@ impl Default for GridRenderer {
     }
 }
 
+fn blend_pixel(dst: &mut [u8], color: &Color, coverage: f32) {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= 0.0 {
+        return;
+    }
+
+    let src_alpha = (color.alpha() * coverage).clamp(0.0, 1.0);
+    if src_alpha <= 0.0 {
+        return;
+    }
+
+    let src_r = color.red() * src_alpha;
+    let src_g = color.green() * src_alpha;
+    let src_b = color.blue() * src_alpha;
+
+    let dst_r = (dst[0] as f32) / 255.0;
+    let dst_g = (dst[1] as f32) / 255.0;
+    let dst_b = (dst[2] as f32) / 255.0;
+    let dst_a = (dst[3] as f32) / 255.0;
+
+    let out_r = src_r + dst_r * (1.0 - src_alpha);
+    let out_g = src_g + dst_g * (1.0 - src_alpha);
+    let out_b = src_b + dst_b * (1.0 - src_alpha);
+    let out_a = src_alpha + dst_a * (1.0 - src_alpha);
+
+    dst[0] = float_to_u8(out_r);
+    dst[1] = float_to_u8(out_g);
+    dst[2] = float_to_u8(out_b);
+    dst[3] = float_to_u8(out_a);
+}
+
+fn float_to_u8(value: f32) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn grid_layout_creation() {
-        let grid = Grid::new(
-            2,
-            3,
-            Rect {
-                x: 0,
-                y: 0,
-                w: 1920,
-                h: 1080,
-            },
-        )
-        .unwrap();
+        let grid = Grid::new(2, 3, Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        }).unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -327,10 +380,7 @@ mod tests {
         assert!(!grid_layout.lines.is_empty(), "Grid should have lines");
 
         // Should have letters when active
-        assert!(
-            !grid_layout.letters.is_empty(),
-            "Active grid should have letters"
-        );
+        assert!(!grid_layout.letters.is_empty(), "Active grid should have letters");
 
         // Check canvas dimensions
         assert_eq!(grid_layout.canvas_width, 1920.0);
@@ -339,17 +389,12 @@ mod tests {
 
     #[test]
     fn inactive_grid_layout() {
-        let grid = Grid::new(
-            2,
-            3,
-            Rect {
-                x: 0,
-                y: 0,
-                w: 1920,
-                h: 1080,
-            },
-        )
-        .unwrap();
+        let grid = Grid::new(2, 3, Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        }).unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -361,25 +406,17 @@ mod tests {
 
         // Should have lines but no letters when inactive
         assert!(!grid_layout.lines.is_empty(), "Grid should have lines");
-        assert!(
-            grid_layout.letters.is_empty(),
-            "Inactive grid should have no letters"
-        );
+        assert!(grid_layout.letters.is_empty(), "Inactive grid should have no letters");
     }
 
     #[test]
     fn dpi_scaling() {
-        let grid = Grid::new(
-            2,
-            2,
-            Rect {
-                x: 0,
-                y: 0,
-                w: 1920,
-                h: 1080,
-            },
-        )
-        .unwrap();
+        let grid = Grid::new(2, 2, Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        }).unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -391,18 +428,21 @@ mod tests {
         let scaled_layout = GridLayout::from_grid(&grid, canvas_rect, true, 2.0);
 
         // Line width should scale with DPI
-        if let (Some(normal_line), Some(scaled_line)) =
-            (normal_layout.lines.first(), scaled_layout.lines.first())
+        if
+            let (Some(normal_line), Some(scaled_line)) = (
+                normal_layout.lines.first(),
+                scaled_layout.lines.first(),
+            )
         {
-            assert!(
-                scaled_line.width > normal_line.width,
-                "Scaled lines should be thicker"
-            );
+            assert!(scaled_line.width > normal_line.width, "Scaled lines should be thicker");
         }
 
         // Font size should scale with DPI
-        if let (Some(normal_letter), Some(scaled_letter)) =
-            (normal_layout.letters.first(), scaled_layout.letters.first())
+        if
+            let (Some(normal_letter), Some(scaled_letter)) = (
+                normal_layout.letters.first(),
+                scaled_layout.letters.first(),
+            )
         {
             assert!(
                 scaled_letter.font_size > normal_letter.font_size,
@@ -414,23 +454,18 @@ mod tests {
     #[test]
     fn grid_renderer_creation() {
         let renderer = GridRenderer::new();
-        assert!(renderer.font_cache.is_empty());
+        assert!(renderer.font.glyph_count() > 0);
     }
 
     #[test]
     fn render_simple_layout() {
         let mut renderer = GridRenderer::new();
-        let grid = Grid::new(
-            2,
-            2,
-            Rect {
-                x: 0,
-                y: 0,
-                w: 1000,
-                h: 800,
-            },
-        )
-        .unwrap();
+        let grid = Grid::new(2, 2, Rect {
+            x: 0,
+            y: 0,
+            w: 1000,
+            h: 800,
+        }).unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -454,17 +489,12 @@ mod tests {
     #[test]
     fn pixmap_to_rgba_conversion() {
         let mut renderer = GridRenderer::new();
-        let grid = Grid::new(
-            2,
-            2,
-            Rect {
-                x: 0,
-                y: 0,
-                w: 1000,
-                h: 800,
-            },
-        )
-        .unwrap();
+        let grid = Grid::new(2, 2, Rect {
+            x: 0,
+            y: 0,
+            w: 1000,
+            h: 800,
+        }).unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,

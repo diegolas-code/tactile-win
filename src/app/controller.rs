@@ -99,8 +99,11 @@ pub struct OverlayManagerGuard {
 
 impl OverlayManagerGuard {
     /// Create a new overlay manager and initialize with monitors and grids
-    pub fn new(monitors: &[Monitor], grids: &[Grid]) -> Result<Self, AppError> {
+    pub fn new(monitors: &[Monitor], grids: &[Grid], event_target: HWND) -> Result<Self, AppError> {
         let mut manager = OverlayManager::new();
+
+        // Overlay windows need a message target for click-to-cancel handling
+        manager.set_event_target(event_target);
 
         // Initialize overlay windows for all monitors with their grids
         manager.initialize(monitors, grids)?;
@@ -280,7 +283,7 @@ impl AppController {
         let grids = config_store.build_grids(&monitors)?;
 
         // Initialize RAII-wrapped components
-        let overlay_manager = OverlayManagerGuard::new(&monitors, &grids)?;
+        let overlay_manager = OverlayManagerGuard::new(&monitors, &grids, main_window)?;
         let keyboard_capture = KeyboardCaptureManager::new(main_window);
 
         // Start in idle mode - hotkey activates selection
@@ -429,9 +432,9 @@ impl AppController {
                     "Switched to Selecting state on monitor {}",
                     selecting.active_monitor_index
                 );
-                // Show overlays and start keyboard capture
-                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
+                // Show overlays before rendering so UpdateLayeredWindow has a visible target
                 self.overlay_manager.show_all();
+                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
 
                 // Start keyboard capture
                 if let Err(e) = self.keyboard_capture.start_capture() {

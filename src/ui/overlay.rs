@@ -44,6 +44,7 @@ use windows::Win32::Graphics::Gdi::{
     TextOutW,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ VK_LBUTTON, VK_MBUTTON, VK_RBUTTON };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW,
     DefWindowProcW,
@@ -52,29 +53,35 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE,
     GetWindowLongPtrW,
     GetWindowRect,
-    LWA_ALPHA,
+    LoadCursorW,
+    PostMessageW,
     RegisterClassW,
     SW_HIDE,
     SW_SHOW,
-    SetLayeredWindowAttributes,
+    SetCursor,
     SetWindowLongPtrW,
     ShowWindow,
     ULW_ALPHA,
     UpdateLayeredWindow,
     WM_DESTROY,
+    WM_LBUTTONDOWN,
+    WM_MBUTTONDOWN,
     WM_PAINT,
+    WM_RBUTTONDOWN,
+    WM_SETCURSOR,
     WNDCLASSW,
     WS_EX_LAYERED,
     WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW,
     WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT,
     WS_POPUP,
+    IDC_ARROW,
 };
 use windows::core::w;
 
 use crate::domain::core::Rect;
 use crate::domain::grid::Grid;
+use crate::input::KeyboardCaptureGuard;
 use crate::platform::monitors::Monitor;
 use crate::ui::renderer::{ GridLayout, GridRenderer, RendererError };
 
@@ -87,9 +94,6 @@ pub enum OverlayError {
     #[error("Failed to create overlay window for monitor {monitor_index}")] WindowCreationFailed {
         monitor_index: usize,
     },
-
-    #[error("Failed to configure overlay transparency")]
-    TransparencyConfigurationFailed,
 
     #[error("Failed to acquire screen device context")]
     DeviceContextFailed,
@@ -142,11 +146,19 @@ pub struct OverlayWindow {
 
     /// Grid renderer
     renderer: GridRenderer,
+
+    /// Target window handle for posting synthetic cancellation events
+    event_target: HWND,
 }
 
 impl OverlayWindow {
     /// Create a new overlay window for the specified monitor
-    fn new(monitor_index: usize, monitor: &Monitor, grid: Grid) -> Result<Self, OverlayError> {
+    fn new(
+        monitor_index: usize,
+        monitor: &Monitor,
+        grid: Grid,
+        event_target: HWND
+    ) -> Result<Self, OverlayError> {
         let class_name = w!("TactileWinOverlayWindow");
 
         // Register window class if needed
@@ -168,6 +180,7 @@ impl OverlayWindow {
             is_active: false,
             cached_pixmap: None,
             renderer: GridRenderer::new(),
+            event_target,
         };
 
         // Note: Do NOT store pointer here - overlay will be moved to HashMap
@@ -291,6 +304,35 @@ impl OverlayWindow {
                     }
                     LRESULT(0)
                 }
+                WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GWLP_USERDATA,
+                        GetWindowLongPtrW,
+                    };
+
+                    unsafe {
+                        let overlay_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+                        if overlay_ptr != 0 {
+                            let overlay = &*(overlay_ptr as *const OverlayWindow);
+                            let vk_code = match msg {
+                                WM_LBUTTONDOWN => u32::from(VK_LBUTTON.0),
+                                WM_RBUTTONDOWN => u32::from(VK_RBUTTON.0),
+                                _ => u32::from(VK_MBUTTON.0),
+                            };
+                            overlay.notify_mouse_click(vk_code);
+                        }
+                    }
+                    LRESULT(0)
+                }
+                WM_SETCURSOR => unsafe {
+                    match LoadCursorW(None, IDC_ARROW) {
+                        Ok(cursor) => {
+                            SetCursor(cursor);
+                            LRESULT(1)
+                        }
+                        Err(_) => DefWindowProcW(hwnd, msg, wparam, lparam),
+                    }
+                }
                 WM_DESTROY => LRESULT(0),
                 _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
             }
@@ -350,21 +392,9 @@ impl OverlayWindow {
     }
 
     /// Configure window transparency and alpha blending
-    fn configure_transparency(hwnd: HWND) -> Result<(), OverlayError> {
-        // Set semi-transparent overlay (no color keying - we want to see the background)
-        let result = unsafe {
-            SetLayeredWindowAttributes(
-                hwnd,
-                COLORREF(0), // Not used when only LWA_ALPHA is set
-                180, // Alpha value (0-255, 180 = ~70% opaque for visibility)
-                LWA_ALPHA // Only alpha blending, no color key
-            )
-        };
-
-        if result.is_err() {
-            return Err(OverlayError::TransparencyConfigurationFailed);
-        }
-
+    fn configure_transparency(_hwnd: HWND) -> Result<(), OverlayError> {
+        // Layered windows driven entirely via UpdateLayeredWindow don't need
+        // additional configuration. Keep the method for future tweaks.
         Ok(())
     }
 
@@ -443,6 +473,23 @@ impl OverlayWindow {
         Ok(())
     }
 
+    /// Post a synthetic keyboard event so the controller treats clicks as cancellation
+    fn notify_mouse_click(&self, vk_code: u32) {
+        if self.event_target.0 == 0 {
+            return;
+        }
+
+        unsafe {
+            let message_id = KeyboardCaptureGuard::message_id();
+            let _ = PostMessageW(
+                self.event_target,
+                message_id,
+                WPARAM(vk_code as usize),
+                LPARAM(0)
+            );
+        }
+    }
+
     /// Present the pixmap via UpdateLayeredWindow for flicker-free rendering
     fn present_pixmap(&self, pixmap: &tiny_skia::Pixmap) -> Result<(), OverlayError> {
         use std::slice;
@@ -509,22 +556,14 @@ impl OverlayWindow {
             }
 
             {
-                let dst = slice::from_raw_parts_mut(pixel_ptr as *mut u8, pixmap.data().len());
-
-                #[cfg(debug_assertions)]
-                {
-                    // Fill with a semi-transparent magenta diagnostic pattern
-                    for chunk in dst.chunks_exact_mut(4) {
-                        chunk[0] = 0xff; // Blue
-                        chunk[1] = 0x00; // Green
-                        chunk[2] = 0xff; // Red
-                        chunk[3] = 0x80; // Alpha 50%
-                    }
-                }
-
-                #[cfg(not(debug_assertions))]
-                {
-                    dst.copy_from_slice(pixmap.data());
+                let src = pixmap.data();
+                let dst = slice::from_raw_parts_mut(pixel_ptr as *mut u8, src.len());
+                for (dst_px, src_px) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+                    // Convert from tiny-skia's premultiplied RGBA to Win32's premultiplied BGRA
+                    dst_px[0] = src_px[2]; // B
+                    dst_px[1] = src_px[1]; // G
+                    dst_px[2] = src_px[0]; // R
+                    dst_px[3] = src_px[3]; // A
                 }
             }
 
@@ -642,6 +681,9 @@ pub struct OverlayManager {
 
     /// Current visibility state
     visible: bool,
+
+    /// Target window for posting synthetic events
+    event_target: HWND,
 }
 
 impl OverlayManager {
@@ -650,6 +692,17 @@ impl OverlayManager {
         Self {
             overlays: Arc::new(Mutex::new(HashMap::new())),
             visible: false,
+            event_target: HWND(0),
+        }
+    }
+
+    /// Set the window handle that should receive synthetic overlay events
+    pub fn set_event_target(&mut self, target: HWND) {
+        self.event_target = target;
+
+        let mut overlays = self.overlays.lock().unwrap();
+        for overlay in overlays.values_mut() {
+            overlay.event_target = target;
         }
     }
 
@@ -676,7 +729,7 @@ impl OverlayManager {
                 cell_w,
                 cell_h
             );
-            let overlay = OverlayWindow::new(index, monitor, grid.clone())?;
+            let overlay = OverlayWindow::new(index, monitor, grid.clone(), self.event_target)?;
             overlays.insert(index, overlay);
         }
 
@@ -701,11 +754,14 @@ impl OverlayManager {
     /// Show overlays on all monitors
     pub fn show_all(&mut self) {
         if !self.visible {
-            let mut overlays = self.overlays.lock().unwrap();
-            for overlay in overlays.values_mut() {
-                overlay.show();
+            {
+                let mut overlays = self.overlays.lock().unwrap();
+                for overlay in overlays.values_mut() {
+                    overlay.show();
+                }
             }
             self.visible = true;
+            self.render_all_grids();
         }
     }
 
