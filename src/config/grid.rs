@@ -486,9 +486,6 @@ impl GridConfigStore {
         }
 
         let path = Self::capabilities_file_path(&self.config_path);
-        if path.exists() {
-            return Ok(());
-        }
 
         let mut buffer = String::new();
         buffer.push_str("# Tactile-Win Monitor Capabilities\n");
