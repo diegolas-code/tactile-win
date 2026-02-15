@@ -12,22 +12,28 @@ use std::sync::Once;
 use std::thread;
 use std::time::Duration;
 
-use crate::config::grid::{GridBounds, GridConfigError, MonitorGridConfig, ScreenOrientation};
+use crate::config::grid::{ GridBounds, GridConfigError, MonitorGridConfig, ScreenOrientation };
 use crate::platform::monitors::Monitor;
 use windows::Win32::Foundation::{
-    GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WIN32_ERROR, WPARAM,
+    GetLastError,
+    HINSTANCE,
+    HWND,
+    LPARAM,
+    LRESULT,
+    WIN32_ERROR,
+    WPARAM,
 };
-use windows::Win32::Graphics::Gdi::{DEFAULT_GUI_FONT, GetStockObject, HFONT};
+use windows::Win32::Graphics::Gdi::{ DEFAULT_GUI_FONT, GetStockObject, HFONT };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{PCWSTR, PWSTR, w};
+use windows::core::{ PCWSTR, PWSTR, w };
 
 const DIALOG_WIDTH: i32 = 520;
 const DIALOG_HEIGHT: i32 = 420;
 const TAB_LEFT: i32 = 16;
 const TAB_TOP: i32 = 16;
-const TAB_WIDTH: i32 = DIALOG_WIDTH - (TAB_LEFT * 2);
+const TAB_WIDTH: i32 = DIALOG_WIDTH - TAB_LEFT * 2;
 const TAB_HEIGHT: i32 = 260;
 
 const PANEL_LEFT: i32 = TAB_LEFT + 8;
@@ -49,7 +55,7 @@ pub struct GridConfigurationDialog;
 impl GridConfigurationDialog {
     pub fn open(
         monitors: &[Monitor],
-        configs: &[MonitorGridConfig],
+        configs: &[MonitorGridConfig]
     ) -> Result<Option<Vec<MonitorGridConfig>>, ConfigDialogError> {
         ensure_common_controls();
 
@@ -59,6 +65,11 @@ impl GridConfigurationDialog {
 
         if configs.len() != monitors.len() {
             return Err(ConfigDialogError::DataMismatch);
+        }
+
+        // Phase 4 MVP: Log single-monitor mode in console when opening config dialog
+        if monitors.len() == 1 {
+            println!("Config Dialog: Operating in single-monitor mode (Phase 4 MVP)");
         }
 
         let state = DialogState::new(monitors, configs)?;
@@ -94,10 +105,8 @@ pub enum ConfigDialogError {
     ClassRegistrationFailed,
     #[error("Failed to create configuration dialog window")]
     WindowCreationFailed,
-    #[error("Windows API error: {0}")]
-    Win32Error(String),
-    #[error(transparent)]
-    Grid(#[from] GridConfigError),
+    #[error("Windows API error: {0}")] Win32Error(String),
+    #[error(transparent)] Grid(#[from] GridConfigError),
 }
 
 struct DialogState {
@@ -190,8 +199,9 @@ fn ensure_common_controls() {
 
 fn create_dialog_window(state_ptr: *mut DialogState) -> Result<(), ConfigDialogError> {
     unsafe {
-        let module = GetModuleHandleW(PCWSTR::null())
-            .map_err(|e| ConfigDialogError::Win32Error(format!("{:?}", e)))?;
+        let module = GetModuleHandleW(PCWSTR::null()).map_err(|e|
+            ConfigDialogError::Win32Error(format!("{:?}", e))
+        )?;
         let instance: HINSTANCE = module.into();
 
         register_dialog_class(instance)?;
@@ -208,7 +218,7 @@ fn create_dialog_window(state_ptr: *mut DialogState) -> Result<(), ConfigDialogE
             None,
             None,
             instance,
-            Some(state_ptr as *const _ as *mut _),
+            Some(state_ptr as *const _ as *mut _)
         );
 
         if hwnd.0 == 0 {
@@ -234,7 +244,9 @@ fn register_dialog_class(instance: HINSTANCE) -> Result<(), ConfigDialogError> {
         if RegisterClassW(&wnd_class) == 0 {
             match GetLastError() {
                 Err(err) if err.code() == CLASS_ALREADY_EXISTS_ERR.to_hresult() => {}
-                _ => return Err(ConfigDialogError::ClassRegistrationFailed),
+                _ => {
+                    return Err(ConfigDialogError::ClassRegistrationFailed);
+                }
             }
         }
     }
@@ -246,7 +258,7 @@ unsafe extern "system" fn dialog_wnd_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
-    lparam: LPARAM,
+    lparam: LPARAM
 ) -> LRESULT {
     match msg {
         WM_CREATE => {
@@ -319,7 +331,11 @@ fn run_modal_loop(state_ptr: *mut DialogState) {
 
 unsafe fn dialog_state_mut(hwnd: HWND) -> Option<&'static mut DialogState> {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut DialogState;
-    if ptr.is_null() { None } else { Some(&mut *ptr) }
+    if ptr.is_null() {
+        None
+    } else {
+        Some(&mut *ptr)
+    }
 }
 
 impl DialogState {
@@ -337,7 +353,7 @@ impl DialogState {
                 self.hwnd,
                 HMENU(ID_TAB_CONTROL as isize),
                 None,
-                None,
+                None
             );
             apply_font(self.tab_hwnd, self.font);
         }
@@ -372,7 +388,7 @@ impl DialogState {
                 self.tab_hwnd,
                 TCM_INSERTITEMW,
                 WPARAM(index),
-                LPARAM(&mut item as *mut _ as isize),
+                LPARAM(&mut item as *mut _ as isize)
             );
         }
     }
@@ -394,10 +410,26 @@ impl DialogState {
                 self.hwnd,
                 None,
                 None,
-                None,
+                None
             )
         };
         apply_font(panel, self.font);
+
+        // Phase 4 MVP: Show single-monitor information if only one monitor
+        // Display at the bottom of the panel as an informational note
+        if self.monitors.len() == 1 {
+            let info_text =
+                "ℹ Phase 4 MVP: Single-monitor mode. Multi-monitor support coming in Phase 5.";
+            let _info_label = create_static(
+                panel,
+                self.font,
+                info_text,
+                12,
+                PANEL_HEIGHT - 30,
+                PANEL_WIDTH - 24,
+                24
+            );
+        }
 
         let _orientation_label = create_static(panel, self.font, "Orientation", 12, 10, 100, 20);
         let orientation_value = create_static(
@@ -407,7 +439,7 @@ impl DialogState {
             120,
             10,
             PANEL_WIDTH - 160,
-            20,
+            20
         );
 
         let summary_label = create_static(panel, self.font, "", 12, 36, PANEL_WIDTH - 24, 24);
@@ -424,9 +456,9 @@ impl DialogState {
                 160,
                 26,
                 panel,
-                HMENU((ID_BTN_RESET_BASE + index as i32) as isize),
+                HMENU((ID_BTN_RESET_BASE + (index as i32)) as isize),
                 None,
-                None,
+                None
             )
         };
         apply_font(reset_button, self.font);
@@ -434,24 +466,18 @@ impl DialogState {
         let _cols_label = create_static(panel, self.font, "Columns", 12, 76, 100, 22);
         let cols_edit = create_readonly_edit(panel, self.font, 120, 72, 64, 26);
         let cols_spinner = create_spinner(panel, 190, 72, 26);
-        self.spinner_map.insert(
-            cols_spinner.0,
-            SpinnerDescriptor {
-                tab_index: index,
-                field: SpinnerField::Columns,
-            },
-        );
+        self.spinner_map.insert(cols_spinner.0, SpinnerDescriptor {
+            tab_index: index,
+            field: SpinnerField::Columns,
+        });
 
         let _rows_label = create_static(panel, self.font, "Rows", 12, 110, 100, 22);
         let rows_edit = create_readonly_edit(panel, self.font, 120, 106, 64, 26);
         let rows_spinner = create_spinner(panel, 190, 106, 26);
-        self.spinner_map.insert(
-            rows_spinner.0,
-            SpinnerDescriptor {
-                tab_index: index,
-                field: SpinnerField::Rows,
-            },
-        );
+        self.spinner_map.insert(rows_spinner.0, SpinnerDescriptor {
+            tab_index: index,
+            field: SpinnerField::Rows,
+        });
 
         let advanced_toggle = unsafe {
             let style_bits = WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | (BS_AUTOCHECKBOX as u32);
@@ -465,9 +491,9 @@ impl DialogState {
                 PANEL_WIDTH - 24,
                 24,
                 panel,
-                HMENU((ID_CHK_ADVANCED_BASE + index as i32) as isize),
+                HMENU((ID_CHK_ADVANCED_BASE + (index as i32)) as isize),
                 None,
-                None,
+                None
             )
         };
         apply_font(advanced_toggle, self.font);
@@ -486,7 +512,7 @@ impl DialogState {
                 panel,
                 None,
                 None,
-                None,
+                None
             )
         };
         apply_font(advanced_group, self.font);
@@ -494,29 +520,37 @@ impl DialogState {
             ShowWindow(advanced_group, SW_HIDE);
         }
 
-        let _min_width_label =
-            create_static(advanced_group, self.font, "Minimum width", 12, 32, 140, 22);
+        let _min_width_label = create_static(
+            advanced_group,
+            self.font,
+            "Minimum width",
+            12,
+            32,
+            140,
+            22
+        );
         let min_width_edit = create_readonly_edit(advanced_group, self.font, 160, 28, 64, 26);
         let min_width_spinner = create_spinner(advanced_group, 230, 28, 26);
-        self.spinner_map.insert(
-            min_width_spinner.0,
-            SpinnerDescriptor {
-                tab_index: index,
-                field: SpinnerField::MinWidth,
-            },
-        );
+        self.spinner_map.insert(min_width_spinner.0, SpinnerDescriptor {
+            tab_index: index,
+            field: SpinnerField::MinWidth,
+        });
 
-        let _min_height_label =
-            create_static(advanced_group, self.font, "Minimum height", 12, 68, 140, 22);
+        let _min_height_label = create_static(
+            advanced_group,
+            self.font,
+            "Minimum height",
+            12,
+            68,
+            140,
+            22
+        );
         let min_height_edit = create_readonly_edit(advanced_group, self.font, 160, 64, 64, 26);
         let min_height_spinner = create_spinner(advanced_group, 230, 64, 26);
-        self.spinner_map.insert(
-            min_height_spinner.0,
-            SpinnerDescriptor {
-                tab_index: index,
-                field: SpinnerField::MinHeight,
-            },
-        );
+        self.spinner_map.insert(min_height_spinner.0, SpinnerDescriptor {
+            tab_index: index,
+            field: SpinnerField::MinHeight,
+        });
 
         Ok(TabControls {
             panel,
@@ -551,7 +585,7 @@ impl DialogState {
                 self.hwnd,
                 HMENU(ID_BTN_APPLY as isize),
                 None,
-                None,
+                None
             );
             apply_font(apply, self.font);
 
@@ -567,7 +601,7 @@ impl DialogState {
                 self.hwnd,
                 HMENU(ID_BTN_CANCEL as isize),
                 None,
-                None,
+                None
             );
             apply_font(cancel, self.font);
         }
@@ -576,10 +610,7 @@ impl DialogState {
     fn show_tab(&mut self, index: usize) {
         for (tab_index, panel) in self.panels.iter().enumerate() {
             unsafe {
-                ShowWindow(
-                    panel.panel,
-                    if tab_index == index { SW_SHOW } else { SW_HIDE },
-                );
+                ShowWindow(panel.panel, if tab_index == index { SW_SHOW } else { SW_HIDE });
             }
         }
         self.active_tab = index;
@@ -590,24 +621,13 @@ impl DialogState {
             return Err(ConfigDialogError::DataMismatch);
         }
 
-        let config = self
-            .configs
-            .get(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
+        let config = self.configs.get(index).ok_or(ConfigDialogError::DataMismatch)?;
         let panel = &self.panels[index];
 
         set_numeric_field(panel.cols_edit, panel.cols_spinner, config.cols);
         set_numeric_field(panel.rows_edit, panel.rows_spinner, config.rows);
-        set_numeric_field(
-            panel.min_width_edit,
-            panel.min_width_spinner,
-            config.min_cell_width,
-        );
-        set_numeric_field(
-            panel.min_height_edit,
-            panel.min_height_spinner,
-            config.min_cell_height,
-        );
+        set_numeric_field(panel.min_width_edit, panel.min_width_spinner, config.min_cell_width);
+        set_numeric_field(panel.min_height_edit, panel.min_height_spinner, config.min_cell_height);
 
         self.update_summary_label(index);
         self.update_spinner_ranges(index)?;
@@ -617,58 +637,49 @@ impl DialogState {
 
     fn update_summary_label(&self, index: usize) {
         if let (Some(panel), Some(config)) = (self.panels.get(index), self.configs.get(index)) {
-            set_control_text(
-                panel.summary_label,
-                &format_summary_text(config.cols, config.rows),
-            );
+            set_control_text(panel.summary_label, &format_summary_text(config.cols, config.rows));
         }
     }
 
     fn update_spinner_ranges(&mut self, index: usize) -> Result<(), ConfigDialogError> {
-        let monitor = self
-            .monitors
-            .get(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
-        let config = self
-            .configs
-            .get_mut(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
+        let monitor = self.monitors.get(index).ok_or(ConfigDialogError::DataMismatch)?;
+        let config = self.configs.get_mut(index).ok_or(ConfigDialogError::DataMismatch)?;
 
-        let bounds =
-            GridBounds::for_monitor(monitor, config.min_cell_width, config.min_cell_height)?;
+        let bounds = GridBounds::for_monitor(
+            monitor,
+            config.min_cell_width,
+            config.min_cell_height
+        )?;
 
         config.cols = bounds.clamp_cols(config.cols);
         config.rows = bounds.clamp_rows(config.rows);
 
-        let panel = self
-            .panels
-            .get(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
+        let panel = self.panels.get(index).ok_or(ConfigDialogError::DataMismatch)?;
 
         unsafe {
             SendMessageW(
                 panel.cols_spinner,
                 UDM_SETRANGE32,
                 WPARAM(bounds.min_cols as usize),
-                LPARAM(bounds.max_cols as isize),
+                LPARAM(bounds.max_cols as isize)
             );
             SendMessageW(
                 panel.rows_spinner,
                 UDM_SETRANGE32,
                 WPARAM(bounds.min_rows as usize),
-                LPARAM(bounds.max_rows as isize),
+                LPARAM(bounds.max_rows as isize)
             );
             SendMessageW(
                 panel.min_width_spinner,
                 UDM_SETRANGE32,
                 WPARAM(MonitorGridConfig::MIN_CELL_LIMIT as usize),
-                LPARAM(MonitorGridConfig::MAX_CELL_LIMIT as isize),
+                LPARAM(MonitorGridConfig::MAX_CELL_LIMIT as isize)
             );
             SendMessageW(
                 panel.min_height_spinner,
                 UDM_SETRANGE32,
                 WPARAM(MonitorGridConfig::MIN_CELL_LIMIT as usize),
-                LPARAM(MonitorGridConfig::MAX_CELL_LIMIT as isize),
+                LPARAM(MonitorGridConfig::MAX_CELL_LIMIT as isize)
             );
         }
 
@@ -678,19 +689,12 @@ impl DialogState {
     fn toggle_advanced_group(&mut self, index: usize, visible: bool) {
         if let Some(panel) = self.panels.get(index) {
             unsafe {
-                ShowWindow(
-                    panel.advanced_group,
-                    if visible { SW_SHOW } else { SW_HIDE },
-                );
+                ShowWindow(panel.advanced_group, if visible { SW_SHOW } else { SW_HIDE });
                 SendMessageW(
                     panel.advanced_toggle,
                     BM_SETCHECK,
-                    WPARAM(if visible {
-                        BST_CHECKED.0 as usize
-                    } else {
-                        BST_UNCHECKED.0 as usize
-                    }),
-                    LPARAM(0),
+                    WPARAM(if visible { BST_CHECKED.0 as usize } else { BST_UNCHECKED.0 as usize }),
+                    LPARAM(0)
                 );
             }
         }
@@ -700,8 +704,8 @@ impl DialogState {
     }
 
     fn handle_command(&mut self, wparam: WPARAM, _lparam: LPARAM) {
-        let command_id = (wparam.0 & 0xFFFF) as i32;
-        let notify_code = ((wparam.0 >> 16) & 0xFFFF) as u16;
+        let command_id = (wparam.0 & 0xffff) as i32;
+        let notify_code = ((wparam.0 >> 16) & 0xffff) as u16;
 
         if command_id == ID_BTN_APPLY {
             self.handle_apply();
@@ -713,24 +717,22 @@ impl DialogState {
             return;
         }
 
-        if command_id >= ID_BTN_RESET_BASE
-            && command_id < ID_BTN_RESET_BASE + (self.panels.len() as i32)
+        if
+            command_id >= ID_BTN_RESET_BASE &&
+            command_id < ID_BTN_RESET_BASE + (self.panels.len() as i32)
         {
             let tab_index = (command_id - ID_BTN_RESET_BASE) as usize;
             self.reset_tab(tab_index);
             return;
         }
 
-        if command_id >= ID_CHK_ADVANCED_BASE
-            && command_id < ID_CHK_ADVANCED_BASE + (self.panels.len() as i32)
-            && notify_code == BN_CLICKED as u16
+        if
+            command_id >= ID_CHK_ADVANCED_BASE &&
+            command_id < ID_CHK_ADVANCED_BASE + (self.panels.len() as i32) &&
+            notify_code == (BN_CLICKED as u16)
         {
             let tab_index = (command_id - ID_CHK_ADVANCED_BASE) as usize;
-            let new_state = !self
-                .advanced_visible
-                .get(tab_index)
-                .copied()
-                .unwrap_or(false);
+            let new_state = !self.advanced_visible.get(tab_index).copied().unwrap_or(false);
             self.toggle_advanced_group(tab_index, new_state);
             return;
         }
@@ -740,14 +742,18 @@ impl DialogState {
         unsafe {
             let header = &*(lparam.0 as *const NMHDR);
 
-            if header.hwndFrom == self.tab_hwnd && header.code == TCN_SELCHANGE as u32 {
-                let new_index =
-                    SendMessageW(self.tab_hwnd, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
+            if header.hwndFrom == self.tab_hwnd && header.code == (TCN_SELCHANGE as u32) {
+                let new_index = SendMessageW(
+                    self.tab_hwnd,
+                    TCM_GETCURSEL,
+                    WPARAM(0),
+                    LPARAM(0)
+                ).0 as usize;
                 self.show_tab(new_index);
                 return false;
             }
 
-            if header.code == UDN_DELTAPOS as u32 {
+            if header.code == (UDN_DELTAPOS as u32) {
                 let data = &mut *(lparam.0 as *mut NMUPDOWN);
                 return self.handle_spinner_delta(header.hwndFrom, data);
             }
@@ -759,7 +765,9 @@ impl DialogState {
     fn handle_spinner_delta(&mut self, hwnd_from: HWND, delta: &mut NMUPDOWN) -> bool {
         let descriptor = match self.spinner_map.get(&hwnd_from.0) {
             Some(desc) => *desc,
-            None => return false,
+            None => {
+                return false;
+            }
         };
 
         match descriptor.field {
@@ -774,7 +782,7 @@ impl DialogState {
         &mut self,
         tab_index: usize,
         delta: &mut NMUPDOWN,
-        is_columns: bool,
+        is_columns: bool
     ) -> bool {
         if tab_index >= self.configs.len() {
             return false;
@@ -789,17 +797,9 @@ impl DialogState {
         };
 
         let (min, max, current_value) = if is_columns {
-            (
-                bounds.min_cols as i32,
-                bounds.max_cols as i32,
-                self.configs[tab_index].cols as i32,
-            )
+            (bounds.min_cols as i32, bounds.max_cols as i32, self.configs[tab_index].cols as i32)
         } else {
-            (
-                bounds.min_rows as i32,
-                bounds.max_rows as i32,
-                self.configs[tab_index].rows as i32,
-            )
+            (bounds.min_rows as i32, bounds.max_rows as i32, self.configs[tab_index].rows as i32)
         };
 
         let mut new_value = current_value + delta.iDelta;
@@ -825,7 +825,7 @@ impl DialogState {
         &mut self,
         tab_index: usize,
         delta: &mut NMUPDOWN,
-        is_width: bool,
+        is_width: bool
     ) -> bool {
         if tab_index >= self.configs.len() {
             return false;
@@ -864,10 +864,12 @@ impl DialogState {
     }
 
     fn reset_tab(&mut self, tab_index: usize) {
-        if let (Some(monitor), Some(config)) = (
-            self.monitors.get(tab_index),
-            self.configs.get_mut(tab_index),
-        ) {
+        if
+            let (Some(monitor), Some(config)) = (
+                self.monitors.get(tab_index),
+                self.configs.get_mut(tab_index),
+            )
+        {
             config.reset_to_defaults(monitor);
             if let Err(err) = config.apply_bounds_from_monitor(monitor) {
                 self.show_error_dialog(&format!("{}", err));
@@ -909,23 +911,20 @@ impl DialogState {
                 self.hwnd,
                 PCWSTR(wide.as_ptr()),
                 w!("Grid Configuration"),
-                MB_OK | MB_ICONWARNING,
+                MB_OK | MB_ICONWARNING
             );
         }
     }
 
     fn compute_bounds(&self, index: usize) -> Result<GridBounds, ConfigDialogError> {
-        let monitor = self
-            .monitors
-            .get(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
-        let config = self
-            .configs
-            .get(index)
-            .ok_or(ConfigDialogError::DataMismatch)?;
+        let monitor = self.monitors.get(index).ok_or(ConfigDialogError::DataMismatch)?;
+        let config = self.configs.get(index).ok_or(ConfigDialogError::DataMismatch)?;
 
-        let bounds =
-            GridBounds::for_monitor(monitor, config.min_cell_width, config.min_cell_height)?;
+        let bounds = GridBounds::for_monitor(
+            monitor,
+            config.min_cell_width,
+            config.min_cell_height
+        )?;
 
         Ok(bounds)
     }
@@ -944,7 +943,7 @@ fn create_static(
     x: i32,
     y: i32,
     width: i32,
-    height: i32,
+    height: i32
 ) -> HWND {
     unsafe {
         let hwnd = CreateWindowExW(
@@ -959,7 +958,7 @@ fn create_static(
             parent,
             None,
             None,
-            None,
+            None
         );
         apply_font(hwnd, font);
         set_control_text(hwnd, text);
@@ -973,15 +972,16 @@ fn create_readonly_edit(
     x: i32,
     y: i32,
     width: i32,
-    height: i32,
+    height: i32
 ) -> HWND {
     unsafe {
-        let style_bits = WS_CHILD.0
-            | WS_VISIBLE.0
-            | WS_BORDER.0
-            | WS_TABSTOP.0
-            | (ES_CENTER as u32)
-            | (ES_READONLY as u32);
+        let style_bits =
+            WS_CHILD.0 |
+            WS_VISIBLE.0 |
+            WS_BORDER.0 |
+            WS_TABSTOP.0 |
+            (ES_CENTER as u32) |
+            (ES_READONLY as u32);
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             w!("EDIT"),
@@ -994,7 +994,7 @@ fn create_readonly_edit(
             parent,
             None,
             None,
-            None,
+            None
         );
         apply_font(hwnd, font);
         hwnd
@@ -1017,7 +1017,7 @@ fn create_spinner(parent: HWND, x: i32, y: i32, height: i32) -> HWND {
             parent,
             None,
             None,
-            None,
+            None
         )
     }
 }
@@ -1043,12 +1043,7 @@ fn format_orientation_text(monitor: &Monitor) -> String {
         ScreenOrientation::Portrait => "Portrait",
     };
 
-    format!(
-        "{} · {} × {} px",
-        label,
-        monitor.work_area.w.max(0),
-        monitor.work_area.h.max(0)
-    )
+    format!("{} · {} × {} px", label, monitor.work_area.w.max(0), monitor.work_area.h.max(0))
 }
 
 fn format_summary_text(cols: u32, rows: u32) -> String {

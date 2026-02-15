@@ -3,19 +3,29 @@
 //! The controller orchestrates between input, domain, UI, and platform layers.
 //! It maintains stable configuration (grids, monitors) and handles state transitions.
 
-use crate::app::state::{AppState, StateEvent, StateMachine};
-use crate::config::{GridConfigError, GridConfigStore, MonitorGridConfig};
+use crate::app::state::{ AppState, StateEvent, StateMachine };
+use crate::config::{ GridConfigError, GridConfigStore, MonitorGridConfig };
 use crate::domain::grid::Grid;
-use crate::input::{KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard};
-use crate::platform::monitors::{Monitor, MonitorError, enumerate_monitors};
-use crate::ui::{GridConfigurationDialog, OverlayError, OverlayManager};
-use std::sync::{Arc, Mutex};
-use windows::Win32::Foundation::{HWND, WPARAM};
+use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
+use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
+use crate::ui::{ GridConfigurationDialog, OverlayError, OverlayManager };
+use std::sync::{ Arc, Mutex };
+use windows::Win32::Foundation::{ HWND, WPARAM };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT, MOD_CONTROL, RegisterHotKey, UnregisterHotKey, VK_F9,
+    MOD_ALT,
+    MOD_CONTROL,
+    RegisterHotKey,
+    UnregisterHotKey,
+    VK_F9,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage, WM_HOTKEY, WM_QUIT,
+    DispatchMessageW,
+    MSG,
+    PM_REMOVE,
+    PeekMessageW,
+    TranslateMessage,
+    WM_HOTKEY,
+    WM_QUIT,
 };
 
 const MAIN_HOTKEY_ID: i32 = 1;
@@ -233,13 +243,9 @@ impl AppController {
 
         unsafe {
             let modifiers = MOD_CONTROL | MOD_ALT;
-            RegisterHotKey(
-                self.main_window,
-                MAIN_HOTKEY_ID,
-                modifiers,
-                u32::from(VK_F9.0),
-            )
-            .map_err(|err| AppError::HotkeyRegistrationFailed(format!("{}", err)))?;
+            RegisterHotKey(self.main_window, MAIN_HOTKEY_ID, modifiers, u32::from(VK_F9.0)).map_err(
+                |err| AppError::HotkeyRegistrationFailed(format!("{}", err))
+            )?;
         }
 
         self.hotkey_registered = true;
@@ -267,9 +273,33 @@ impl AppController {
     /// AppController instance or AppError if initialization fails
     pub fn new(main_window: HWND) -> Result<Self, AppError> {
         // Initialize monitors using Phase 1 infrastructure
-        let monitors = enumerate_monitors()?;
+        let mut monitors = enumerate_monitors()?;
         if monitors.is_empty() {
             return Err(AppError::NoSuitableMonitors);
+        }
+
+        // Phase 4 MVP: Single-monitor enforcement
+        // Multi-monitor support is deferred to Phase 5
+        if monitors.len() > 1 {
+            println!("\n╔═══════════════════════════════════════════════════════════╗");
+            println!("║  ⚠️  MULTIPLE MONITORS DETECTED                          ║");
+            println!("╠═══════════════════════════════════════════════════════════╣");
+            println!("║  Phase 4 MVP operates on PRIMARY MONITOR only.            ║");
+            println!("║  Multi-monitor support is coming in Phase 5.              ║");
+            println!("║                                                           ║");
+            println!(
+                "║  Detected monitors: {}                                     ║",
+                monitors.len()
+            );
+            println!("║  Using: Primary monitor only                              ║");
+            println!("╚═══════════════════════════════════════════════════════════╝\n");
+
+            // Filter to keep only the primary monitor
+            monitors.retain(|m| m.is_primary);
+
+            if monitors.is_empty() {
+                return Err(AppError::NoSuitableMonitors);
+            }
         }
 
         // Initialize configuration store and build grids per monitor
@@ -396,8 +426,7 @@ impl AppController {
                     selecting.active_monitor_index
                 );
                 // Show overlays and start keyboard capture
-                self.overlay_manager
-                    .set_active_monitor(selecting.active_monitor_index);
+                self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
                 self.overlay_manager.show_all();
 
                 // Start keyboard capture
@@ -425,7 +454,8 @@ impl AppController {
                 if grid.contains_key(key) {
                     println!(
                         "Valid grid key: '{}' on monitor {}",
-                        key, selecting.active_monitor_index
+                        key,
+                        selecting.active_monitor_index
                     );
 
                     // Convert key to coordinates
@@ -480,8 +510,7 @@ impl AppController {
         if let AppState::Selecting(selecting) = new_state {
             println!("Switched to monitor {}", selecting.active_monitor_index);
             // Update overlay rendering to show new active monitor
-            self.overlay_manager
-                .set_active_monitor(selecting.active_monitor_index);
+            self.overlay_manager.set_active_monitor(selecting.active_monitor_index);
             self.overlay_manager.render_grids();
         }
     }
@@ -525,7 +554,10 @@ impl AppController {
             if let Some((top_left, bottom_right)) = selecting.selection.get_normalized_coords() {
                 println!(
                     "DEBUG: Got normalized coords: ({},{}) to ({},{})",
-                    top_left.row, top_left.col, bottom_right.row, bottom_right.col
+                    top_left.row,
+                    top_left.col,
+                    bottom_right.row,
+                    bottom_right.col
                 );
 
                 // Get the grid for the active monitor
@@ -551,10 +583,12 @@ impl AppController {
                                     println!("Active window: {}", window_info.title);
 
                                     // Position the window
-                                    match crate::platform::window::position_window(
-                                        window_info.handle,
-                                        target_rect,
-                                    ) {
+                                    match
+                                        crate::platform::window::position_window(
+                                            window_info.handle,
+                                            target_rect
+                                        )
+                                    {
                                         Ok(_) => {
                                             println!("✓ Window positioned successfully");
                                         }
@@ -664,7 +698,7 @@ impl AppController {
 
     fn apply_configuration_changes(
         &mut self,
-        updated: Vec<MonitorGridConfig>,
+        updated: Vec<MonitorGridConfig>
     ) -> Result<(), AppError> {
         self.config_store.update_configs(&self.monitors, updated)?;
         self.grids = self.config_store.build_grids(&self.monitors)?;
@@ -745,7 +779,7 @@ impl AppController {
                     if msg.message == WM_QUIT {
                         println!("Received WM_QUIT, exiting event loop");
                         break;
-                    } else if msg.message == WM_HOTKEY && msg.wParam.0 == MAIN_HOTKEY_ID as usize {
+                    } else if msg.message == WM_HOTKEY && msg.wParam.0 == (MAIN_HOTKEY_ID as usize) {
                         // Hotkey pressed (Ctrl+Alt+F9) - toggle state
                         println!("Ctrl+Alt+F9 pressed! Toggling overlay...");
                         self.handle_hotkey();
