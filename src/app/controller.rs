@@ -10,11 +10,7 @@ use crate::domain::grid::Grid;
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
 use crate::ui::{ OverlayError, OverlayManager };
-use std::sync::{
-    atomic::{ AtomicBool, Ordering },
-    Arc,
-    Mutex,
-};
+use std::sync::{ atomic::{ AtomicBool, Ordering }, Arc, Mutex };
 use windows::Win32::Foundation::{ HWND, WPARAM };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT,
@@ -358,46 +354,79 @@ impl AppController {
                 match GridBounds::for_monitor(monitor, min_cell_width, min_cell_height) {
                     Ok(bounds) => {
                         println!(
-                            "Overlay diagnostics: config {}x{} -> realized {}x{} cells ({}x{} px) | rows {}-{} | cols {}-{} | min cell >= {}x{} px",
-                            cfg.rows,
+                            "Overlay diagnostics:\n\
+                            From config: {} cols. x {} rows | Rendered: {} cols x {} rows @ {}x{} px\n\
+                            Cols.: {} - {} (min. - max.)\n\
+                            Rows: {} - {} (min. - max.)\n\
+                            Min. cell size: {} x {} px",
                             cfg.cols,
-                            actual_rows,
+                            cfg.rows,
                             actual_cols,
+                            actual_rows,
                             cell_width,
                             cell_height,
-                            bounds.min_rows,
-                            bounds.max_rows,
                             bounds.min_cols,
                             bounds.max_cols,
+                            bounds.min_rows,
+                            bounds.max_rows,
                             min_cell_width,
                             min_cell_height
                         );
                     }
                     Err(err) => {
                         println!(
-                            "Overlay diagnostics: config {}x{} (realized {}x{} cells at {}x{} px) but monitor cannot satisfy min cell {}x{} px ({})",
-                            cfg.rows,
+                            "Overlay diagnostics:\n\
+                            From config: {} cols. x {} rows | Rendered: {} cols x {} rows, but monitor cannot satisfy min cell size ({})\n\
+                            Requested min. cell size: {} x {} px",
                             cfg.cols,
-                            actual_rows,
+                            cfg.rows,
                             actual_cols,
-                            cell_width,
-                            cell_height,
+                            actual_rows,
+                            err,
                             min_cell_width,
-                            min_cell_height,
-                            err
+                            min_cell_height
                         );
                     }
                 }
             }
             None => {
-                println!(
-                    "Overlay diagnostics: no persisted config for monitor {}; realized grid {}x{} with cells {}x{} px",
-                    monitor.index,
-                    actual_rows,
-                    actual_cols,
-                    cell_width,
-                    cell_height
-                );
+                let fallback_min = MonitorGridConfig::DEFAULT_MIN_CELL;
+                match GridBounds::for_monitor(monitor, fallback_min, fallback_min) {
+                    Ok(bounds) => {
+                        println!(
+                            "Overlay diagnostics:\n\
+                            No persisted config for monitor {} | Rendered: {} cols x {} rows @ {}x{} px\n\
+                            Cols.: {} - {} (min. - max.)\n\
+                            Rows: {} - {} (min. - max.)\n\
+                            Using fallback min. cell size: {} x {} px",
+                            monitor.index,
+                            actual_cols,
+                            actual_rows,
+                            cell_width,
+                            cell_height,
+                            bounds.min_cols,
+                            bounds.max_cols,
+                            bounds.min_rows,
+                            bounds.max_rows,
+                            fallback_min,
+                            fallback_min
+                        );
+                    }
+                    Err(err) => {
+                        println!(
+                            "Overlay diagnostics:\n\
+                            No persisted config for monitor {} | Rendered: {} cols x {} rows @ {}x{} px\n\
+                            Unable to compute bounds with fallback min. cell size ({}): {}",
+                            monitor.index,
+                            actual_cols,
+                            actual_rows,
+                            cell_width,
+                            cell_height,
+                            fallback_min,
+                            err
+                        );
+                    }
+                }
             }
         }
     }
@@ -722,7 +751,7 @@ impl AppController {
             if let Some(grid) = self.grids.get(i) {
                 self.log_monitor_diagnostics(i, monitor, grid);
             } else {
-                println!("Overlay diagnostics: missing grid entry for monitor {}", monitor.index);
+                println!("Overlay diagnostics: \nmissing grid entry for monitor {}", monitor.index);
             }
         }
 
