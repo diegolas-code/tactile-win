@@ -4,7 +4,16 @@
 //! rendering. Separates layout calculation from rendering for better testability.
 
 use ab_glyph::{ point, Font, FontArc, PxScale };
-use tiny_skia::{ Color, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke, Transform };
+use tiny_skia::{
+    Color,
+    Paint,
+    PathBuilder,
+    Pixmap,
+    Rect as SkiaRect,
+    Stroke,
+    StrokeDash,
+    Transform,
+};
 
 use crate::domain::core::Rect;
 use crate::domain::grid::Grid;
@@ -218,8 +227,10 @@ impl GridRenderer {
                 let mut paint = Paint::default();
                 paint.set_color(line.color);
 
+                let dash_pattern = vec![line.width * 4.0, line.width * 2.0];
                 let stroke = Stroke {
                     width: line.width,
+                    dash: StrokeDash::new(dash_pattern, 0.0),
                     ..Stroke::default()
                 };
 

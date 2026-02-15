@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 const GRID_CONFIG_FILENAME: &str = "grid_config.json";
+const GRID_CAPABILITIES_FILENAME: &str = "grid_capabilities.txt";
+const GRID_CAPABILITIES_VERSION: u32 = 1;
 const GRID_CONFIG_VERSION: u32 = 2;
 const DEFAULT_SELECTION_TIMEOUT_SECS: u64 = 30;
 const MIN_SELECTION_TIMEOUT_SECS: u64 = 5;
@@ -210,6 +212,10 @@ pub enum GridConfigError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("Failed to write capability file {path}: {source}")] CapabilityWriteError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("Failed to parse configuration file {path}: {source}")] ConfigParseError {
         path: PathBuf,
         source: serde_json::Error,
@@ -237,7 +243,7 @@ impl GridConfigStore {
         let config_path = Self::config_file_path();
         let monitor_ids = Self::monitor_ids(monitors);
 
-        if
+        let store = if
             let Some((configs, selection_timeout_secs, needs_save)) = Self::load_from_disk(
                 monitors,
                 &config_path
@@ -252,18 +258,22 @@ impl GridConfigStore {
             if needs_save {
                 store.save_to_disk()?;
             }
-            return Ok(store);
-        }
-
-        let configs = Self::default_configs(monitors)?;
-        let store = Self {
-            configs,
-            config_path,
-            monitor_ids,
-            selection_timeout_secs: DEFAULT_SELECTION_TIMEOUT_SECS,
+            store
+        } else {
+            let configs = Self::default_configs(monitors)?;
+            let store = Self {
+                configs,
+                config_path,
+                monitor_ids,
+                selection_timeout_secs: DEFAULT_SELECTION_TIMEOUT_SECS,
+            };
+            // Persist defaults so the file exists for subsequent runs
+            store.save_to_disk()?;
+            store
         };
-        // Persist defaults so the file exists for subsequent runs
-        store.save_to_disk()?;
+
+        store.ensure_capabilities_file(monitors)?;
+
         Ok(store)
     }
 
@@ -298,6 +308,13 @@ impl GridConfigStore {
 
     fn config_file_path() -> PathBuf {
         PathBuf::from(GRID_CONFIG_FILENAME)
+    }
+
+    fn capabilities_file_path(config_path: &PathBuf) -> PathBuf {
+        match config_path.parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => dir.join(GRID_CAPABILITIES_FILENAME),
+            _ => PathBuf::from(GRID_CAPABILITIES_FILENAME),
+        }
     }
 
     fn load_from_disk(
@@ -459,6 +476,52 @@ impl GridConfigStore {
 
         fs::write(&self.config_path, data).map_err(|source| GridConfigError::ConfigWriteError {
             path: self.config_path.clone(),
+            source,
+        })
+    }
+
+    fn ensure_capabilities_file(&self, monitors: &[Monitor]) -> Result<(), GridConfigError> {
+        if self.configs.len() != monitors.len() {
+            return Err(GridConfigError::MonitorMismatch);
+        }
+
+        let path = Self::capabilities_file_path(&self.config_path);
+        if path.exists() {
+            return Ok(());
+        }
+
+        let mut buffer = String::new();
+        buffer.push_str("# Tactile-Win Monitor Capabilities\n");
+        buffer.push_str(&format!("capabilities_version={}\n", GRID_CAPABILITIES_VERSION));
+        buffer.push_str(&format!("monitor_count={}\n\n", monitors.len()));
+
+        for monitor in monitors {
+            let config = self.configs.get(monitor.index).ok_or(GridConfigError::MonitorMismatch)?;
+            let min_cell_width = MonitorGridConfig::sanitize_cell_dimension(config.min_cell_width);
+            let min_cell_height = MonitorGridConfig::sanitize_cell_dimension(
+                config.min_cell_height
+            );
+            let bounds = GridBounds::for_monitor(monitor, min_cell_width, min_cell_height)?;
+
+            buffer.push_str(&format!("[{}]\n", monitor_identifier(monitor)));
+            buffer.push_str(&format!("index={}\n", monitor.index));
+            buffer.push_str(&format!("is_primary={}\n", monitor.is_primary));
+            buffer.push_str(&format!("physical_width={}\n", monitor.physical_rect.w));
+            buffer.push_str(&format!("physical_height={}\n", monitor.physical_rect.h));
+            buffer.push_str(&format!("work_area_width={}\n", monitor.work_area.w));
+            buffer.push_str(&format!("work_area_height={}\n", monitor.work_area.h));
+            buffer.push_str(&format!("work_area_left={}\n", monitor.work_area.x));
+            buffer.push_str(&format!("work_area_top={}\n", monitor.work_area.y));
+            buffer.push_str(&format!("min_cell_width={}\n", min_cell_width));
+            buffer.push_str(&format!("min_cell_height={}\n", min_cell_height));
+            buffer.push_str(&format!("min_cols={}\n", bounds.min_cols));
+            buffer.push_str(&format!("max_cols={}\n", bounds.max_cols));
+            buffer.push_str(&format!("min_rows={}\n", bounds.min_rows));
+            buffer.push_str(&format!("max_rows={}\n\n", bounds.max_rows));
+        }
+
+        fs::write(&path, buffer).map_err(|source| GridConfigError::CapabilityWriteError {
+            path: path.clone(),
             source,
         })
     }

@@ -1,0 +1,20 @@
+# Tactile-Win Monitor Capabilities
+capabilities_version=1
+monitor_count=1
+
+[primary]
+index=0
+is_primary=true
+physical_width=1920
+physical_height=1080
+work_area_width=1920
+work_area_height=1080
+work_area_left=0
+work_area_top=0
+min_cell_width=300
+min_cell_height=300
+min_cols=2
+max_cols=6
+min_rows=2
+max_rows=3
+
