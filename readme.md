@@ -30,7 +30,7 @@ cargo run --release
 
 3. **Try it out!** While the application is running, try resizing any open window using the `Ctrl+Alt+F9` hotkey. Enter any two letters from the grid to select the desired area corners.
 
-4. **Grid settings** Grid configuration is handled by `grid_config.json`. When the app starts it prints on console an overlay diagnostic that shows the valid grid dimensions and minimum cell size for your monitor. Any invalid values you enter are automatically corrected and written back to the JSON file.
+4. **Grid settings** Grid configuration is handled by `grid_config.json`. Any invalid inputs are automatically corrected and written back to the JSON file. Allowed grid dimensions and minimum cell size for your monitor are printed to the console in an overlay diagnostic and also written to `grid_capabilities.txt` on every startup, together with the monitor’s resolution details.
 
 Application remains open and available to use on any window until stopped in the terminal that launched it with `Ctrl+C`.
 
