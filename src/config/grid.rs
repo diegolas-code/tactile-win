@@ -8,7 +8,10 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 const GRID_CONFIG_FILENAME: &str = "grid_config.json";
-const GRID_CONFIG_VERSION: u32 = 1;
+const GRID_CONFIG_VERSION: u32 = 2;
+const DEFAULT_SELECTION_TIMEOUT_SECS: u64 = 30;
+const MIN_SELECTION_TIMEOUT_SECS: u64 = 5;
+const MAX_SELECTION_TIMEOUT_SECS: u64 = 300;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredGridSettings {
@@ -28,11 +31,21 @@ struct StoredMonitorEntry {
 struct GridConfigFile {
     #[serde(default = "default_config_version")]
     version: u32,
+    #[serde(default = "default_selection_timeout_secs")]
+    selection_timeout_secs: u64,
     monitors: Vec<StoredMonitorEntry>,
 }
 
 fn default_config_version() -> u32 {
     GRID_CONFIG_VERSION
+}
+
+fn default_selection_timeout_secs() -> u64 {
+    DEFAULT_SELECTION_TIMEOUT_SECS
+}
+
+fn sanitize_selection_timeout_secs(value: u64) -> u64 {
+    value.clamp(MIN_SELECTION_TIMEOUT_SECS, MAX_SELECTION_TIMEOUT_SECS)
 }
 
 /// Orientation of a monitor computed from its work area
@@ -125,7 +138,6 @@ pub struct GridBounds {
     pub min_rows: u32,
     pub max_rows: u32,
 }
-
 impl GridBounds {
     pub fn for_monitor(
         monitor: &Monitor,
@@ -213,6 +225,7 @@ pub struct GridConfigStore {
     configs: Vec<MonitorGridConfig>,
     config_path: PathBuf,
     monitor_ids: Vec<String>,
+    selection_timeout_secs: u64,
 }
 
 impl GridConfigStore {
@@ -224,11 +237,17 @@ impl GridConfigStore {
         let config_path = Self::config_file_path();
         let monitor_ids = Self::monitor_ids(monitors);
 
-        if let Some((configs, needs_save)) = Self::load_from_disk(monitors, &config_path)? {
+        if
+            let Some((configs, selection_timeout_secs, needs_save)) = Self::load_from_disk(
+                monitors,
+                &config_path
+            )?
+        {
             let store = Self {
                 configs,
                 config_path,
                 monitor_ids,
+                selection_timeout_secs,
             };
             if needs_save {
                 store.save_to_disk()?;
@@ -241,6 +260,7 @@ impl GridConfigStore {
             configs,
             config_path,
             monitor_ids,
+            selection_timeout_secs: DEFAULT_SELECTION_TIMEOUT_SECS,
         };
         // Persist defaults so the file exists for subsequent runs
         store.save_to_disk()?;
@@ -249,6 +269,10 @@ impl GridConfigStore {
 
     pub fn configs(&self) -> &[MonitorGridConfig] {
         &self.configs
+    }
+
+    pub fn selection_timeout_secs(&self) -> u64 {
+        self.selection_timeout_secs
     }
 
     pub fn build_grids(&self, monitors: &[Monitor]) -> Result<Vec<Grid>, GridConfigError> {
@@ -279,7 +303,7 @@ impl GridConfigStore {
     fn load_from_disk(
         monitors: &[Monitor],
         path: &PathBuf
-    ) -> Result<Option<(Vec<MonitorGridConfig>, bool)>, GridConfigError> {
+    ) -> Result<Option<(Vec<MonitorGridConfig>, u64, bool)>, GridConfigError> {
         if !path.exists() {
             return Ok(None);
         }
@@ -299,9 +323,12 @@ impl GridConfigStore {
                     );
                 }
                 let (configs, sanitized) = Self::align_stored_entries(monitors, file.monitors)?;
+                let timeout = sanitize_selection_timeout_secs(file.selection_timeout_secs);
+                let timeout_sanitized = timeout != file.selection_timeout_secs;
                 // Rewrite file if version differs or if invalid values were corrected
-                let needs_save = sanitized || file.version != GRID_CONFIG_VERSION;
-                Ok(Some((configs, needs_save)))
+                let needs_save =
+                    sanitized || timeout_sanitized || file.version != GRID_CONFIG_VERSION;
+                Ok(Some((configs, timeout, needs_save)))
             }
             Err(primary_err) => {
                 match serde_json::from_str::<Vec<MonitorGridConfig>>(&data) {
@@ -311,7 +338,7 @@ impl GridConfigStore {
                             monitors,
                             &mut legacy_configs
                         )?;
-                        Ok(Some((configs, true)))
+                        Ok(Some((configs, DEFAULT_SELECTION_TIMEOUT_SECS, true)))
                     }
                     Err(_) =>
                         Err(GridConfigError::ConfigParseError {
@@ -422,6 +449,7 @@ impl GridConfigStore {
 
         let file = GridConfigFile {
             version: GRID_CONFIG_VERSION,
+            selection_timeout_secs: self.selection_timeout_secs,
             monitors: entries,
         };
 

@@ -1,14 +1,15 @@
 {
-    "version": 1,
-    "monitors": [
-        {
-            "monitor_id": "primary",
-            "grid": {
-                "rows": 2,
-                "cols": 3,
-                "min_cell_width": 300,
-                "min_cell_height": 300
-            }
-        }
-    ]
+  "version": 2,
+  "selection_timeout_secs": 30,
+  "monitors": [
+    {
+      "monitor_id": "primary",
+      "grid": {
+        "rows": 2,
+        "cols": 3,
+        "min_cell_width": 300,
+        "min_cell_height": 300
+      }
+    }
+  ]
 }

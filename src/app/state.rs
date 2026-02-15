@@ -26,8 +26,10 @@ pub struct SelectingState {
     pub active_monitor_index: usize,
     /// Current selection progress (start key, completion, etc.)
     pub selection: Selection,
-    /// Timestamp when selection started (for 30s timeout)
+    /// Timestamp when selection started (for timeout tracking)
     pub selection_started: Instant,
+    /// Allowed duration in seconds before automatic cancellation
+    pub timeout_secs: u64,
 }
 
 impl SelectingState {
@@ -35,20 +37,22 @@ impl SelectingState {
     ///
     /// # Arguments
     /// * `active_monitor_index` - Index of monitor to start selection on
-    pub fn new(active_monitor_index: usize) -> Self {
+    /// * `timeout_secs` - Maximum time (in seconds) the selection may remain active
+    pub fn new(active_monitor_index: usize, timeout_secs: u64) -> Self {
         Self {
             active_monitor_index,
             selection: Selection::new(),
             selection_started: Instant::now(),
+            timeout_secs,
         }
     }
 
-    /// Checks if the selection has timed out (30 seconds)
+    /// Checks if the selection has exceeded its configured timeout
     ///
     /// # Returns
     /// true if selection should be automatically cancelled
     pub fn is_timed_out(&self) -> bool {
-        self.selection_started.elapsed().as_secs() >= 30
+        self.selection_started.elapsed().as_secs() >= self.timeout_secs
     }
 
     /// Switches to a different monitor during selection
@@ -102,14 +106,15 @@ impl StateMachine {
     pub fn process_event(
         current_state: AppState,
         event: StateEvent,
-        monitor_count: usize
+        monitor_count: usize,
+        selection_timeout_secs: u64
     ) -> AppState {
         match (current_state, event) {
             // From Idle state
             (AppState::Idle, StateEvent::HotkeyPressed) => {
                 println!("STATE MACHINE: Idle -> Selecting (starting selection on monitor 0)");
                 // Start selection on primary monitor (index 0)
-                AppState::Selecting(SelectingState::new(0))
+                AppState::Selecting(SelectingState::new(0, selection_timeout_secs))
             }
 
             // From Selecting state
@@ -170,6 +175,8 @@ impl StateMachine {
 mod tests {
     use super::*;
 
+    const TEST_TIMEOUT: u64 = 30;
+
     #[test]
     fn default_state_is_idle() {
         let state = AppState::default();
@@ -178,7 +185,7 @@ mod tests {
 
     #[test]
     fn selecting_state_creation() {
-        let selecting = SelectingState::new(1);
+        let selecting = SelectingState::new(1, TEST_TIMEOUT);
         assert_eq!(selecting.active_monitor_index, 1);
         assert!(selecting.selection.is_empty());
         assert!(!selecting.is_timed_out()); // Should not timeout immediately
@@ -189,7 +196,8 @@ mod tests {
         let state = StateMachine::process_event(
             AppState::Idle,
             StateEvent::HotkeyPressed,
-            2 // 2 monitors
+            2, // 2 monitors
+            TEST_TIMEOUT
         );
 
         assert!(matches!(state, AppState::Selecting(_)));
@@ -200,14 +208,15 @@ mod tests {
 
     #[test]
     fn navigation_switches_monitors() {
-        let initial_selecting = SelectingState::new(0);
+        let initial_selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(initial_selecting);
 
         // Navigate right from monitor 0 to monitor 1
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3 // 3 monitors
+            3, // 3 monitors
+            TEST_TIMEOUT
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -219,14 +228,15 @@ mod tests {
 
     #[test]
     fn navigation_wraps_around() {
-        let initial_selecting = SelectingState::new(2); // Last monitor
+        let initial_selecting = SelectingState::new(2, TEST_TIMEOUT); // Last monitor
         let state = AppState::Selecting(initial_selecting);
 
         // Navigate right should wrap to monitor 0
         let new_state = StateMachine::process_event(
             state,
             StateEvent::Navigation(NavigationDirection::Right),
-            3 // 3 monitors (indices 0, 1, 2)
+            3, // 3 monitors (indices 0, 1, 2)
+            TEST_TIMEOUT
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -238,37 +248,52 @@ mod tests {
 
     #[test]
     fn selection_completion_returns_to_idle() {
-        let selecting = SelectingState::new(0);
+        let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(state, StateEvent::SelectionCompleted, 1);
+        let new_state = StateMachine::process_event(
+            state,
+            StateEvent::SelectionCompleted,
+            1,
+            TEST_TIMEOUT
+        );
 
         assert!(matches!(new_state, AppState::Idle));
     }
 
     #[test]
     fn escape_cancels_selection() {
-        let selecting = SelectingState::new(0);
+        let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(state, StateEvent::SelectionCancelled, 1);
+        let new_state = StateMachine::process_event(
+            state,
+            StateEvent::SelectionCancelled,
+            1,
+            TEST_TIMEOUT
+        );
 
         assert!(matches!(new_state, AppState::Idle));
     }
 
     #[test]
     fn hotkey_during_selection_toggles_off() {
-        let selecting = SelectingState::new(0);
+        let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(state, StateEvent::HotkeyPressed, 1);
+        let new_state = StateMachine::process_event(
+            state,
+            StateEvent::HotkeyPressed,
+            1,
+            TEST_TIMEOUT
+        );
 
         assert!(matches!(new_state, AppState::Idle));
     }
 
     #[test]
     fn monitor_switching_resets_selection() {
-        let mut selecting = SelectingState::new(0);
+        let mut selecting = SelectingState::new(0, TEST_TIMEOUT);
 
         // Simulate some selection progress (this would normally be set by controller)
         // For now just verify the monitor index changes and selection gets reset

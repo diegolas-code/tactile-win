@@ -408,7 +408,12 @@ impl AppController {
     pub fn process_event(&self, event: StateEvent) -> AppState {
         let mut state_guard = self.state.lock().unwrap();
         let current_state = state_guard.clone();
-        let new_state = StateMachine::process_event(current_state, event, self.monitor_count());
+        let new_state = StateMachine::process_event(
+            current_state,
+            event,
+            self.monitor_count(),
+            self.config_store.selection_timeout_secs()
+        );
         *state_guard = new_state.clone();
         new_state
     }
