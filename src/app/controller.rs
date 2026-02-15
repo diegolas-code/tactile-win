@@ -332,7 +332,9 @@ impl AppController {
         self.grids.get(index)
     }
 
-    fn log_monitor_diagnostics(&self, list_index: usize, monitor: &Monitor) {
+    fn log_monitor_diagnostics(&self, list_index: usize, monitor: &Monitor, grid: &Grid) {
+        let (actual_rows, actual_cols) = grid.dimensions();
+        let (cell_width, cell_height) = grid.cell_size();
         let configs = self.config_store.configs();
         let config = configs
             .iter()
@@ -349,9 +351,13 @@ impl AppController {
                 match GridBounds::for_monitor(monitor, min_cell_width, min_cell_height) {
                     Ok(bounds) => {
                         println!(
-                            "  Overlay diagnostics: grid {}x{} | rows {}-{} | cols {}-{} | min cell >= {}x{} px",
-                            cfg.cols,
+                            "Overlay diagnostics: config {}x{} -> realized {}x{} cells ({}x{} px) | rows {}-{} | cols {}-{} | min cell >= {}x{} px",
                             cfg.rows,
+                            cfg.cols,
+                            actual_rows,
+                            actual_cols,
+                            cell_width,
+                            cell_height,
                             bounds.min_rows,
                             bounds.max_rows,
                             bounds.min_cols,
@@ -362,9 +368,13 @@ impl AppController {
                     }
                     Err(err) => {
                         println!(
-                            "  Overlay diagnostics: grid {}x{} but monitor cannot satisfy min cell {}x{} px ({})",
-                            cfg.cols,
+                            "Overlay diagnostics: config {}x{} (realized {}x{} cells at {}x{} px) but monitor cannot satisfy min cell {}x{} px ({})",
                             cfg.rows,
+                            cfg.cols,
+                            actual_rows,
+                            actual_cols,
+                            cell_width,
+                            cell_height,
                             min_cell_width,
                             min_cell_height,
                             err
@@ -374,8 +384,12 @@ impl AppController {
             }
             None => {
                 println!(
-                    "  Overlay diagnostics: no persisted grid config for monitor {}",
-                    monitor.index
+                    "Overlay diagnostics: no persisted config for monitor {}; realized grid {}x{} with cells {}x{} px",
+                    monitor.index,
+                    actual_rows,
+                    actual_cols,
+                    cell_width,
+                    cell_height
                 );
             }
         }
@@ -695,7 +709,11 @@ impl AppController {
                 monitor.work_area.x,
                 monitor.work_area.y
             );
-            self.log_monitor_diagnostics(i, monitor);
+            if let Some(grid) = self.grids.get(i) {
+                self.log_monitor_diagnostics(i, monitor, grid);
+            } else {
+                println!("Overlay diagnostics: missing grid entry for monitor {}", monitor.index);
+            }
         }
 
         println!("\n=== APPLICATION READY ===");

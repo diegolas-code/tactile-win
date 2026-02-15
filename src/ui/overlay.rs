@@ -232,15 +232,6 @@ impl OverlayWindow {
                             // Draw vertical grid lines
                             let (rows, cols) = overlay.grid.dimensions();
 
-                            // Debug: Log dimensions to diagnose overflow
-                            println!(
-                                "Overlay dimensions - rows: {}, cols: {}, cell_width: {}, cell_height: {}",
-                                rows,
-                                cols,
-                                cell_width,
-                                cell_height
-                            );
-
                             // Use saturating arithmetic to prevent overflow in debug mode
                             let cell_width_i32 = cell_width.min(i32::MAX as u32) as i32;
                             let cell_height_i32 = cell_height.min(i32::MAX as u32) as i32;
