@@ -9,11 +9,18 @@
 
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{ HWND, LPARAM, LRESULT, WPARAM },
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW,
-            UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+            CallNextHookEx,
+            HHOOK,
+            KBDLLHOOKSTRUCT,
+            PostMessageW,
+            SetWindowsHookExW,
+            UnhookWindowsHookEx,
+            WH_KEYBOARD_LL,
+            WM_KEYDOWN,
+            WM_SYSKEYDOWN,
         },
     },
     core::PCWSTR,
@@ -51,8 +58,6 @@ pub enum KeyEvent {
     Navigation(NavigationDirection),
     /// Cancel selection
     Cancel,
-    /// Open configuration dialog
-    OpenConfiguration,
     /// Invalid key (for debugging)
     Invalid(u32),
 }
@@ -61,17 +66,29 @@ impl KeyEvent {
     /// Convert Windows virtual key code to KeyEvent
     fn from_vk_code(vk_code: u32) -> Option<Self> {
         match vk_code {
-            // Grid keys (QWERTY layout)
-            0x51 => Some(KeyEvent::GridKey('Q')),      // Q
-            0x57 => Some(KeyEvent::GridKey('W')),      // W
-            0x45 => Some(KeyEvent::GridKey('E')),      // E
-            0x52 => Some(KeyEvent::GridKey('R')),      // R
-            0x54 => Some(KeyEvent::GridKey('T')),      // T
-            0x59 => Some(KeyEvent::GridKey('Y')),      // Y
-            0x55 => Some(KeyEvent::GridKey('U')),      // U
-            0x49 => Some(KeyEvent::GridKey('I')),      // I
-            0x4f => Some(KeyEvent::GridKey('O')),      // O
-            0x50 => Some(KeyEvent::OpenConfiguration), // P opens config dialog
+            // Grid keys (number row + QWERTY layout)
+            0x31 => Some(KeyEvent::GridKey('1')), // 1
+            0x32 => Some(KeyEvent::GridKey('2')), // 2
+            0x33 => Some(KeyEvent::GridKey('3')), // 3
+            0x34 => Some(KeyEvent::GridKey('4')), // 4
+            0x35 => Some(KeyEvent::GridKey('5')), // 5
+            0x36 => Some(KeyEvent::GridKey('6')), // 6
+            0x37 => Some(KeyEvent::GridKey('7')), // 7
+            0x38 => Some(KeyEvent::GridKey('8')), // 8
+            0x39 => Some(KeyEvent::GridKey('9')), // 9
+            0x30 => Some(KeyEvent::GridKey('0')), // 0
+
+            // QWERTY alpha rows
+            0x51 => Some(KeyEvent::GridKey('Q')), // Q
+            0x57 => Some(KeyEvent::GridKey('W')), // W
+            0x45 => Some(KeyEvent::GridKey('E')), // E
+            0x52 => Some(KeyEvent::GridKey('R')), // R
+            0x54 => Some(KeyEvent::GridKey('T')), // T
+            0x59 => Some(KeyEvent::GridKey('Y')), // Y
+            0x55 => Some(KeyEvent::GridKey('U')), // U
+            0x49 => Some(KeyEvent::GridKey('I')), // I
+            0x4f => Some(KeyEvent::GridKey('O')), // O
+            0x50 => Some(KeyEvent::GridKey('P')), // P
 
             0x41 => Some(KeyEvent::GridKey('A')), // A
             0x53 => Some(KeyEvent::GridKey('S')), // S
@@ -94,7 +111,7 @@ impl KeyEvent {
             // Navigation keys
             0x25 => Some(KeyEvent::Navigation(NavigationDirection::Left)), // VK_LEFT
             0x27 => Some(KeyEvent::Navigation(NavigationDirection::Right)), // VK_RIGHT
-            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)),   // VK_UP
+            0x26 => Some(KeyEvent::Navigation(NavigationDirection::Up)), // VK_UP
             0x28 => Some(KeyEvent::Navigation(NavigationDirection::Down)), // VK_DOWN
 
             // Cancel keys
@@ -151,11 +168,16 @@ impl KeyboardCapture {
             });
 
             // Install low-level keyboard hook
-            let hinstance = GetModuleHandleW(PCWSTR::null())
-                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+            let hinstance = GetModuleHandleW(PCWSTR::null()).map_err(
+                |_| KeyboardCaptureError::HookInstallationFailed
+            )?;
 
-            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), hinstance, 0)
-                .map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
+            let hook = SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(keyboard_hook_proc),
+                hinstance,
+                0
+            ).map_err(|_| KeyboardCaptureError::HookInstallationFailed)?;
 
             self.hook = Some(hook);
         }
@@ -234,7 +256,7 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                     state.target_hwnd,
                     WM_TACTILE_KEY_EVENT,
                     WPARAM(vk_code as usize),
-                    LPARAM(0),
+                    LPARAM(0)
                 )
             };
 
@@ -296,13 +318,12 @@ mod tests {
     #[test]
     fn key_event_conversion() {
         // Test grid keys
+        assert_eq!(KeyEvent::from_vk_code(0x31), Some(KeyEvent::GridKey('1')));
         assert_eq!(KeyEvent::from_vk_code(0x51), Some(KeyEvent::GridKey('Q')));
         assert_eq!(KeyEvent::from_vk_code(0x41), Some(KeyEvent::GridKey('A')));
         assert_eq!(KeyEvent::from_vk_code(0x5a), Some(KeyEvent::GridKey('Z')));
-        assert_eq!(
-            KeyEvent::from_vk_code(0x50),
-            Some(KeyEvent::OpenConfiguration)
-        );
+        assert_eq!(KeyEvent::from_vk_code(0x50), Some(KeyEvent::GridKey('P')));
+        assert_eq!(KeyEvent::from_vk_code(0x30), Some(KeyEvent::GridKey('0')));
 
         // Test navigation keys
         assert_eq!(

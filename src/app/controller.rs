@@ -8,7 +8,7 @@ use crate::config::{ GridConfigError, GridConfigStore, MonitorGridConfig };
 use crate::domain::grid::Grid;
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
-use crate::ui::{ GridConfigurationDialog, OverlayError, OverlayManager };
+use crate::ui::{ OverlayError, OverlayManager };
 use std::sync::{ Arc, Mutex };
 use windows::Win32::Foundation::{ HWND, WPARAM };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -662,50 +662,12 @@ impl AppController {
                 KeyEvent::Cancel => {
                     self.handle_cancellation();
                 }
-                KeyEvent::OpenConfiguration => {
-                    self.handle_config_request();
-                }
                 KeyEvent::Invalid(vk_code) => {
                     println!("Invalid key pressed (vk={}), cancelling selection", vk_code);
                     self.handle_cancellation();
                 }
             }
         }
-    }
-
-    fn handle_config_request(&mut self) {
-        if matches!(self.get_state(), AppState::Selecting(_)) {
-            self.handle_cancellation();
-        }
-
-        println!("Opening grid configuration dialog");
-        match GridConfigurationDialog::open(&self.monitors, self.config_store.configs()) {
-            Ok(Some(updated_configs)) => {
-                if let Err(err) = self.apply_configuration_changes(updated_configs) {
-                    eprintln!("Failed to apply configuration: {}", err);
-                } else {
-                    println!("Configuration applied successfully");
-                }
-            }
-            Ok(None) => {
-                println!("Configuration dialog cancelled");
-            }
-            Err(err) => {
-                eprintln!("Failed to open configuration dialog: {}", err);
-            }
-        }
-    }
-
-    fn apply_configuration_changes(
-        &mut self,
-        updated: Vec<MonitorGridConfig>
-    ) -> Result<(), AppError> {
-        self.config_store.update_configs(&self.monitors, updated)?;
-        self.grids = self.config_store.build_grids(&self.monitors)?;
-        self.overlay_manager.hide_all();
-        let new_overlay_manager = OverlayManagerGuard::new(&self.monitors, &self.grids)?;
-        self.overlay_manager = new_overlay_manager;
-        Ok(())
     }
 
     /// Checks for selection timeout and handles it if necessary
