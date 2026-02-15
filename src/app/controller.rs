@@ -10,7 +10,11 @@ use crate::domain::grid::Grid;
 use crate::input::{ KeyEvent, KeyboardCaptureError, KeyboardCaptureGuard };
 use crate::platform::monitors::{ Monitor, MonitorError, enumerate_monitors };
 use crate::ui::{ OverlayError, OverlayManager };
-use std::sync::{ Arc, Mutex };
+use std::sync::{
+    atomic::{ AtomicBool, Ordering },
+    Arc,
+    Mutex,
+};
 use windows::Win32::Foundation::{ HWND, WPARAM };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT,
@@ -698,7 +702,7 @@ impl AppController {
     }
 
     /// Main event loop for processing keyboard events and timeouts
-    pub fn run(&mut self) -> Result<(), AppError> {
+    pub fn run(&mut self, shutdown_flag: Arc<AtomicBool>) -> Result<(), AppError> {
         println!("AppController: Starting main event loop");
         println!(
             "Initialized with {} monitors and {} grids",
@@ -731,6 +735,14 @@ impl AppController {
             let mut msg = MSG::default();
 
             loop {
+                if shutdown_flag.load(Ordering::SeqCst) {
+                    println!("Shutdown requested (Ctrl+C). Exiting event loop...");
+                    if matches!(self.get_state(), AppState::Selecting(_)) {
+                        self.handle_cancellation();
+                    }
+                    break;
+                }
+
                 // Check for selection timeout if in selecting mode
                 if matches!(self.get_state(), AppState::Selecting(_)) {
                     self.check_timeout();

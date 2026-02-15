@@ -3,8 +3,17 @@
 //! Phase 1: Infrastructure (DPI awareness, monitor enumeration, window management) ✓
 //! Phase 2: Domain Logic (keyboard layout, grid geometry, selection process) ✓
 
+use std::sync::{ atomic::{ AtomicBool, Ordering }, Arc, OnceLock };
 use windows::Win32::Foundation::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Console::{
+    SetConsoleCtrlHandler,
+    CTRL_BREAK_EVENT,
+    CTRL_C_EVENT,
+    CTRL_CLOSE_EVENT,
+    CTRL_LOGOFF_EVENT,
+    CTRL_SHUTDOWN_EVENT,
+};
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
@@ -16,6 +25,31 @@ mod input;
 mod platform;
 mod ui;
 
+static SHUTDOWN_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+
+unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
+    match ctrl_type {
+        | CTRL_C_EVENT
+        | CTRL_BREAK_EVENT
+        | CTRL_CLOSE_EVENT
+        | CTRL_LOGOFF_EVENT
+        | CTRL_SHUTDOWN_EVENT => {
+            if let Some(flag) = SHUTDOWN_FLAG.get() {
+                flag.store(true, Ordering::SeqCst);
+            }
+            BOOL(1)
+        }
+        _ => BOOL(0),
+    }
+}
+
+fn install_console_ctrl_handler(flag: Arc<AtomicBool>) -> windows::core::Result<()> {
+    let _ = SHUTDOWN_FLAG.set(flag);
+    unsafe {
+        SetConsoleCtrlHandler(Some(console_ctrl_handler), BOOL(1))?;
+    }
+    Ok(())
+}
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CRITICAL: Set DPI awareness before any other Windows API calls
     // This ensures our application gets real pixel coordinates instead of scaled ones
@@ -24,6 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Tactile-Win: Starting Application\n");
+
+    // Handle console signals (Ctrl+C, close, logoff, shutdown) gracefully
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    install_console_ctrl_handler(shutdown_flag.clone())?;
 
     // Create a dummy window for message processing
     // This is needed for the keyboard hook to post messages to
@@ -35,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Application controller initialized successfully");
 
             // Start the main event loop
-            if let Err(e) = app.run() {
+            if let Err(e) = app.run(shutdown_flag.clone()) {
                 eprintln!("Application error: {}", e);
                 return Err(format!("Application error: {}", e).into());
             }
