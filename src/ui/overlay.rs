@@ -1,4 +1,4 @@
-﻿//! Overlay window management for grid display
+//! Overlay window management for grid display
 //!
 //! Provides transparent overlay windows that appear over all monitors
 //! without stealing focus from the active window. Uses proper Win32
@@ -6,76 +6,24 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::{ Arc, Mutex };
+use std::sync::{Arc, Mutex};
 
-use windows::Win32::Foundation::{ COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM };
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA,
-    AC_SRC_OVER,
-    BI_RGB,
-    BITMAPINFO,
-    BITMAPINFOHEADER,
-    BLENDFUNCTION,
-    BeginPaint,
-    CLIP_DEFAULT_PRECIS,
-    CreateCompatibleDC,
-    CreateDIBSection,
-    CreateFontW,
-    CreateSolidBrush,
-    DEFAULT_CHARSET,
-    DEFAULT_PITCH,
-    DEFAULT_QUALITY,
-    DIB_RGB_COLORS,
-    DeleteDC,
-    DeleteObject,
-    EndPaint,
-    FF_DONTCARE,
-    FW_BOLD,
-    GetDC,
-    HGDIOBJ,
-    InvalidateRect,
-    OUT_DEFAULT_PRECIS,
-    PAINTSTRUCT,
-    ReleaseDC,
-    SelectObject,
-    SetBkMode,
-    SetTextColor,
-    TRANSPARENT,
-    TextOutW,
+    AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, BeginPaint,
+    CLIP_DEFAULT_PRECIS, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush,
+    DEFAULT_CHARSET, DEFAULT_PITCH, DEFAULT_QUALITY, DIB_RGB_COLORS, DeleteDC, DeleteObject,
+    EndPaint, FF_DONTCARE, FW_BOLD, GetDC, HGDIOBJ, InvalidateRect, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT, ReleaseDC, SelectObject, SetBkMode, SetTextColor, TRANSPARENT, TextOutW,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ VK_LBUTTON, VK_MBUTTON, VK_RBUTTON };
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW,
-    DefWindowProcW,
-    DestroyWindow,
-    GWLP_USERDATA,
-    GWL_EXSTYLE,
-    GetWindowLongPtrW,
-    GetWindowRect,
-    LoadCursorW,
-    PostMessageW,
-    RegisterClassW,
-    SW_HIDE,
-    SW_SHOW,
-    SetCursor,
-    SetWindowLongPtrW,
-    ShowWindow,
-    ULW_ALPHA,
-    UpdateLayeredWindow,
-    WM_DESTROY,
-    WM_LBUTTONDOWN,
-    WM_MBUTTONDOWN,
-    WM_PAINT,
-    WM_RBUTTONDOWN,
-    WM_SETCURSOR,
-    WNDCLASSW,
-    WS_EX_LAYERED,
-    WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST,
-    WS_POPUP,
-    IDC_ARROW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_EXSTYLE, GWLP_USERDATA, GetWindowLongPtrW,
+    GetWindowRect, IDC_ARROW, LoadCursorW, PostMessageW, RegisterClassW, SW_HIDE, SW_SHOW,
+    SetCursor, SetWindowLongPtrW, ShowWindow, ULW_ALPHA, UpdateLayeredWindow, WM_DESTROY,
+    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::w;
 
@@ -83,7 +31,7 @@ use crate::domain::core::Rect;
 use crate::domain::grid::Grid;
 use crate::input::KeyboardCaptureGuard;
 use crate::platform::monitors::Monitor;
-use crate::ui::renderer::{ GridLayout, GridRenderer, RendererError };
+use crate::ui::renderer::{GridLayout, GridRenderer, RendererError};
 
 /// Overlay management errors
 #[derive(Debug, thiserror::Error)]
@@ -91,9 +39,8 @@ pub enum OverlayError {
     #[error("Failed to register overlay window class")]
     WindowClassRegistrationFailed,
 
-    #[error("Failed to create overlay window for monitor {monitor_index}")] WindowCreationFailed {
-        monitor_index: usize,
-    },
+    #[error("Failed to create overlay window for monitor {monitor_index}")]
+    WindowCreationFailed { monitor_index: usize },
 
     #[error("Failed to acquire screen device context")]
     DeviceContextFailed,
@@ -107,14 +54,14 @@ pub enum OverlayError {
     #[error("Failed to select bitmap into memory DC")]
     BitmapSelectionFailed,
 
-    #[error("Failed to update layered window surface (code {code})")] LayerUpdateFailed {
-        code: u32,
-    },
+    #[error("Failed to update layered window surface (code {code})")]
+    LayerUpdateFailed { code: u32 },
 
     #[error("Overlay manager not initialized")]
     NotInitialized,
 
-    #[error("Rendering failed: {0}")] RenderingError(#[from] RendererError),
+    #[error("Rendering failed: {0}")]
+    RenderingError(#[from] RendererError),
 }
 
 /// Overlay window for a single monitor
@@ -157,7 +104,7 @@ impl OverlayWindow {
         monitor_index: usize,
         monitor: &Monitor,
         grid: Grid,
-        event_target: HWND
+        event_target: HWND,
     ) -> Result<Self, OverlayError> {
         let class_name = w!("TactileWinOverlayWindow");
 
@@ -196,13 +143,12 @@ impl OverlayWindow {
             hwnd: HWND,
             msg: u32,
             wparam: WPARAM,
-            lparam: LPARAM
+            lparam: LPARAM,
         ) -> LRESULT {
             match msg {
                 WM_PAINT => {
                     use windows::Win32::UI::WindowsAndMessaging::{
-                        GWLP_USERDATA,
-                        GetWindowLongPtrW,
+                        GWLP_USERDATA, GetWindowLongPtrW,
                     };
 
                     unsafe {
@@ -220,7 +166,7 @@ impl OverlayWindow {
                             SetTextColor(hdc, COLORREF(0x0000ffff)); // Yellow text
 
                             // Create a thicker white pen for visible grid lines
-                            use windows::Win32::Graphics::Gdi::{ CreatePen, PS_SOLID };
+                            use windows::Win32::Graphics::Gdi::{CreatePen, PS_SOLID};
                             let hpen = CreatePen(PS_SOLID, 3, COLORREF(0x00ffffff)); // 3 pixels thick, white
                             let old_pen = SelectObject(hdc, HGDIOBJ(hpen.0));
 
@@ -242,7 +188,7 @@ impl OverlayWindow {
                                 CLIP_DEFAULT_PRECIS.0 as u32,
                                 DEFAULT_QUALITY.0 as u32,
                                 (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
-                                windows::core::PCWSTR(font_name.as_ptr())
+                                windows::core::PCWSTR(font_name.as_ptr()),
                             );
                             let old_font = SelectObject(hdc, HGDIOBJ(hfont.0));
 
@@ -252,7 +198,7 @@ impl OverlayWindow {
                             // Use saturating arithmetic to prevent overflow in debug mode
                             let cell_width_i32 = cell_width.min(i32::MAX as u32) as i32;
                             let cell_height_i32 = cell_height.min(i32::MAX as u32) as i32;
-                            use windows::Win32::Graphics::Gdi::{ LineTo, MoveToEx };
+                            use windows::Win32::Graphics::Gdi::{LineTo, MoveToEx};
 
                             for col in 0..=cols {
                                 let x = (col as i32).saturating_mul(cell_width_i32);
@@ -284,9 +230,8 @@ impl OverlayWindow {
                                                 .saturating_add(cell_height_i32 / 2)
                                                 .saturating_sub(font_height / 3);
 
-                                            let text: Vec<u16> = format!("{}\0", key)
-                                                .encode_utf16()
-                                                .collect();
+                                            let text: Vec<u16> =
+                                                format!("{}\0", key).encode_utf16().collect();
                                             TextOutW(hdc, center_x, center_y, &text);
                                         }
                                     }
@@ -306,8 +251,7 @@ impl OverlayWindow {
                 }
                 WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
                     use windows::Win32::UI::WindowsAndMessaging::{
-                        GWLP_USERDATA,
-                        GetWindowLongPtrW,
+                        GWLP_USERDATA, GetWindowLongPtrW,
                     };
 
                     unsafe {
@@ -332,9 +276,9 @@ impl OverlayWindow {
                         }
                         Err(_) => DefWindowProcW(hwnd, msg, wparam, lparam),
                     }
-                }
+                },
                 WM_DESTROY => LRESULT(0),
-                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+                _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
             }
         }
 
@@ -363,7 +307,7 @@ impl OverlayWindow {
     /// Create the actual overlay window
     fn create_overlay_window(
         class_name: windows::core::PCWSTR,
-        monitor_rect: &Rect
+        monitor_rect: &Rect,
     ) -> Result<HWND, OverlayError> {
         let hinstance = unsafe { GetModuleHandleW(None).unwrap() };
 
@@ -380,7 +324,7 @@ impl OverlayWindow {
                 None, // No parent
                 None, // No menu
                 hinstance,
-                None
+                None,
             )
         };
 
@@ -458,7 +402,7 @@ impl OverlayWindow {
             &self.grid,
             self.monitor_rect,
             self.is_active,
-            self.dpi_scale
+            self.dpi_scale,
         );
 
         // Render to pixmap
@@ -485,7 +429,7 @@ impl OverlayWindow {
                 self.event_target,
                 message_id,
                 WPARAM(vk_code as usize),
-                LPARAM(0)
+                LPARAM(0),
             );
         }
     }
@@ -523,9 +467,14 @@ impl OverlayWindow {
             };
 
             let mut pixel_ptr: *mut c_void = std::ptr::null_mut();
-            let dib = match
-                CreateDIBSection(memory_dc, &bitmap_info, DIB_RGB_COLORS, &mut pixel_ptr, None, 0)
-            {
+            let dib = match CreateDIBSection(
+                memory_dc,
+                &bitmap_info,
+                DIB_RGB_COLORS,
+                &mut pixel_ptr,
+                None,
+                0,
+            ) {
                 Ok(bitmap) => bitmap,
                 Err(_) => {
                     DeleteDC(memory_dc);
@@ -543,7 +492,9 @@ impl OverlayWindow {
                 return Err(OverlayError::DibSectionCreationFailed);
             }
 
-            let expected_bytes = (width as usize).saturating_mul(height as usize).saturating_mul(4);
+            let expected_bytes = (width as usize)
+                .saturating_mul(height as usize)
+                .saturating_mul(4);
 
             if pixmap.data().len() != expected_bytes {
                 eprintln!(
@@ -600,7 +551,7 @@ impl OverlayWindow {
                 Some(&src_point),
                 COLORREF(0),
                 Some(&blend),
-                ULW_ALPHA
+                ULW_ALPHA,
             );
 
             // Clean up GDI objects
@@ -616,10 +567,7 @@ impl OverlayWindow {
                 let rect_info = if GetWindowRect(self.hwnd, &mut hwnd_rect).is_ok() {
                     format!(
                         "RECT=({}, {}, {}, {})",
-                        hwnd_rect.left,
-                        hwnd_rect.top,
-                        hwnd_rect.right,
-                        hwnd_rect.bottom
+                        hwnd_rect.left, hwnd_rect.top, hwnd_rect.right, hwnd_rect.bottom
                     )
                 } else {
                     "RECT=<unavailable>".to_string()
@@ -659,7 +607,7 @@ impl OverlayWindow {
     /// (e.g., after being inserted into a HashMap)
     fn update_window_ptr(&self) {
         unsafe {
-            use windows::Win32::UI::WindowsAndMessaging::{ GWLP_USERDATA, SetWindowLongPtrW };
+            use windows::Win32::UI::WindowsAndMessaging::{GWLP_USERDATA, SetWindowLongPtrW};
             SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, self as *const _ as isize);
         }
     }
@@ -723,11 +671,7 @@ impl OverlayManager {
             let (cell_w, cell_h) = grid.cell_size();
             println!(
                 "Creating overlay {} - Grid: {}x{}, Cell size: {}x{}",
-                index,
-                rows,
-                cols,
-                cell_w,
-                cell_h
+                index, rows, cols, cell_w, cell_h
             );
             let overlay = OverlayWindow::new(index, monitor, grid.clone(), self.event_target)?;
             overlays.insert(index, overlay);
@@ -740,11 +684,7 @@ impl OverlayManager {
             let (cell_w, cell_h) = overlay.grid.cell_size();
             println!(
                 "Updated pointer for overlay {} - Grid: {}x{}, Cell size: {}x{}",
-                overlay.monitor_index,
-                rows,
-                cols,
-                cell_w,
-                cell_h
+                overlay.monitor_index, rows, cols, cell_w, cell_h
             );
         }
 
@@ -841,7 +781,10 @@ impl OverlayManager {
                 continue;
             }
             if let Err(err) = overlay.render_grid() {
-                eprintln!("Overlay rendering failed on monitor {}: {}", overlay.monitor_index, err);
+                eprintln!(
+                    "Overlay rendering failed on monitor {}: {}",
+                    overlay.monitor_index, err
+                );
             }
         }
     }

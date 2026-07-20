@@ -107,7 +107,7 @@ impl StateMachine {
         current_state: AppState,
         event: StateEvent,
         monitor_count: usize,
-        selection_timeout_secs: u64
+        selection_timeout_secs: u64,
     ) -> AppState {
         match (current_state, event) {
             // From Idle state
@@ -197,7 +197,7 @@ mod tests {
             AppState::Idle,
             StateEvent::HotkeyPressed,
             2, // 2 monitors
-            TEST_TIMEOUT
+            TEST_TIMEOUT,
         );
 
         assert!(matches!(state, AppState::Selecting(_)));
@@ -216,7 +216,7 @@ mod tests {
             state,
             StateEvent::Navigation(NavigationDirection::Right),
             3, // 3 monitors
-            TEST_TIMEOUT
+            TEST_TIMEOUT,
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -236,7 +236,7 @@ mod tests {
             state,
             StateEvent::Navigation(NavigationDirection::Right),
             3, // 3 monitors (indices 0, 1, 2)
-            TEST_TIMEOUT
+            TEST_TIMEOUT,
         );
 
         if let AppState::Selecting(selecting) = new_state {
@@ -251,12 +251,8 @@ mod tests {
         let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::SelectionCompleted,
-            1,
-            TEST_TIMEOUT
-        );
+        let new_state =
+            StateMachine::process_event(state, StateEvent::SelectionCompleted, 1, TEST_TIMEOUT);
 
         assert!(matches!(new_state, AppState::Idle));
     }
@@ -266,12 +262,8 @@ mod tests {
         let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::SelectionCancelled,
-            1,
-            TEST_TIMEOUT
-        );
+        let new_state =
+            StateMachine::process_event(state, StateEvent::SelectionCancelled, 1, TEST_TIMEOUT);
 
         assert!(matches!(new_state, AppState::Idle));
     }
@@ -281,12 +273,8 @@ mod tests {
         let selecting = SelectingState::new(0, TEST_TIMEOUT);
         let state = AppState::Selecting(selecting);
 
-        let new_state = StateMachine::process_event(
-            state,
-            StateEvent::HotkeyPressed,
-            1,
-            TEST_TIMEOUT
-        );
+        let new_state =
+            StateMachine::process_event(state, StateEvent::HotkeyPressed, 1, TEST_TIMEOUT);
 
         assert!(matches!(new_state, AppState::Idle));
     }

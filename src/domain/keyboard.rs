@@ -55,7 +55,7 @@ impl GridCoords {
 ///
 /// Maps keyboard keys to grid coordinates following QWERTY layout pattern.
 /// Supports multiple grid sizes while maintaining consistent key mapping.
-/// 
+///
 /// The layout uses a "bottom-up" fill strategy: keys are always assigned
 /// starting from the bottom keyboard row (Z row) and working upward as
 /// grid height increases.
@@ -90,7 +90,7 @@ impl QwertyLayout {
     }
 
     /// Returns the keyboard layout definition
-    /// 
+    ///
     /// Row 0: 1 2 3 4 5 6 7 8 9 0 (number row)
     /// Row 1: Q W E R T Y U I O P
     /// Row 2: A S D F G H J K L
@@ -105,7 +105,7 @@ impl QwertyLayout {
     }
 
     /// Maps a screen row to a keyboard row using bottom-up filling
-    /// 
+    ///
     /// Grid always fills from bottom keyboard row (row 3) upward:
     /// - 2-row grid: uses keyboard rows 2, 3 (A, Z)
     /// - 3-row grid: uses keyboard rows 1, 2, 3 (Q, A, Z)
@@ -155,7 +155,8 @@ impl QwertyLayout {
 
                 // Map keyboard row to screen row using bottom-up strategy
                 let keyboard_row = keyboard_row_idx as u32;
-                if let Some(screen_row) = Self::keyboard_row_to_screen_row(keyboard_row, self.rows) {
+                if let Some(screen_row) = Self::keyboard_row_to_screen_row(keyboard_row, self.rows)
+                {
                     return Ok(GridCoords::new(screen_row, col as u32));
                 } else {
                     // Key exists but is not visible in current grid height
@@ -177,7 +178,7 @@ impl QwertyLayout {
         for screen_row in 0..self.rows {
             let keyboard_row = Self::screen_row_to_keyboard_row(screen_row, self.rows);
             let keys = keyboard_rows[keyboard_row as usize];
-            
+
             for col in 0..self.cols {
                 if let Some(&key) = keys.get(col as usize) {
                     valid.push(key);

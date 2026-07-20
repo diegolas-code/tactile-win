@@ -6,4 +6,4 @@
 
 pub mod grid;
 
-pub use grid::{ GridConfigError, GridConfigStore };
+pub use grid::{GridConfigError, GridConfigStore};

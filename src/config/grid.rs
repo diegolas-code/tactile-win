@@ -1,7 +1,7 @@
 use crate::domain::core::Rect;
-use crate::domain::grid::{ Grid, GridError };
+use crate::domain::grid::{Grid, GridError};
 use crate::platform::monitors::Monitor;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -59,7 +59,11 @@ pub enum ScreenOrientation {
 
 impl ScreenOrientation {
     pub fn from_rect(rect: &Rect) -> Self {
-        if rect.w >= rect.h { ScreenOrientation::Landscape } else { ScreenOrientation::Portrait }
+        if rect.w >= rect.h {
+            ScreenOrientation::Landscape
+        } else {
+            ScreenOrientation::Portrait
+        }
     }
 }
 
@@ -124,8 +128,9 @@ impl MonitorGridConfig {
             cols,
             monitor.work_area,
             sanitized_width,
-            sanitized_height
-        ).map_err(|source| GridConfigError::GridCreationFailed {
+            sanitized_height,
+        )
+        .map_err(|source| GridConfigError::GridCreationFailed {
             monitor_index: monitor.index,
             source,
         })
@@ -144,7 +149,7 @@ impl GridBounds {
     pub fn for_monitor(
         monitor: &Monitor,
         min_cell_width: u32,
-        min_cell_height: u32
+        min_cell_height: u32,
     ) -> Result<Self, GridConfigError> {
         let width_req = MonitorGridConfig::sanitize_cell_dimension(min_cell_width);
         let height_req = MonitorGridConfig::sanitize_cell_dimension(min_cell_height);
@@ -194,35 +199,38 @@ impl GridBounds {
 pub enum GridConfigError {
     #[error("Configuration mismatch between monitors and stored grid settings")]
     MonitorMismatch,
-    #[error(
-        "Monitor {monitor_index} cannot satisfy minimum cell size requirements: {reason}"
-    )] MonitorTooSmall {
+    #[error("Monitor {monitor_index} cannot satisfy minimum cell size requirements: {reason}")]
+    MonitorTooSmall {
         monitor_index: usize,
         reason: String,
     },
-    #[error("Grid creation failed for monitor {monitor_index}: {source}")] GridCreationFailed {
+    #[error("Grid creation failed for monitor {monitor_index}: {source}")]
+    GridCreationFailed {
         monitor_index: usize,
         source: GridError,
     },
-    #[error("Failed to read configuration file {path}: {source}")] ConfigReadError {
+    #[error("Failed to read configuration file {path}: {source}")]
+    ConfigReadError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Failed to write configuration file {path}: {source}")] ConfigWriteError {
+    #[error("Failed to write configuration file {path}: {source}")]
+    ConfigWriteError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Failed to write capability file {path}: {source}")] CapabilityWriteError {
+    #[error("Failed to write capability file {path}: {source}")]
+    CapabilityWriteError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Failed to parse configuration file {path}: {source}")] ConfigParseError {
+    #[error("Failed to parse configuration file {path}: {source}")]
+    ConfigParseError {
         path: PathBuf,
         source: serde_json::Error,
     },
-    #[error("Failed to serialize configuration: {source}")] ConfigSerializeError {
-        source: serde_json::Error,
-    },
+    #[error("Failed to serialize configuration: {source}")]
+    ConfigSerializeError { source: serde_json::Error },
 }
 
 /// Store that keeps per-monitor grid configuration aligned with runtime monitors
@@ -243,11 +251,8 @@ impl GridConfigStore {
         let config_path = Self::config_file_path();
         let monitor_ids = Self::monitor_ids(monitors);
 
-        let store = if
-            let Some((configs, selection_timeout_secs, needs_save)) = Self::load_from_disk(
-                monitors,
-                &config_path
-            )?
+        let store = if let Some((configs, selection_timeout_secs, needs_save)) =
+            Self::load_from_disk(monitors, &config_path)?
         {
             let store = Self {
                 configs,
@@ -292,7 +297,10 @@ impl GridConfigStore {
 
         let mut grids = Vec::with_capacity(monitors.len());
         for monitor in monitors {
-            let config = self.configs.get(monitor.index).ok_or(GridConfigError::MonitorMismatch)?;
+            let config = self
+                .configs
+                .get(monitor.index)
+                .ok_or(GridConfigError::MonitorMismatch)?;
             grids.push(config.build_grid(monitor)?);
         }
 
@@ -319,7 +327,7 @@ impl GridConfigStore {
 
     fn load_from_disk(
         monitors: &[Monitor],
-        path: &PathBuf
+        path: &PathBuf,
     ) -> Result<Option<(Vec<MonitorGridConfig>, u64, bool)>, GridConfigError> {
         if !path.exists() {
             return Ok(None);
@@ -335,8 +343,7 @@ impl GridConfigStore {
                 if file.version != GRID_CONFIG_VERSION {
                     println!(
                         "Grid configuration version {} detected (expected {}). Using best-effort load.",
-                        file.version,
-                        GRID_CONFIG_VERSION
+                        file.version, GRID_CONFIG_VERSION
                     );
                 }
                 let (configs, sanitized) = Self::align_stored_entries(monitors, file.monitors)?;
@@ -347,29 +354,26 @@ impl GridConfigStore {
                     sanitized || timeout_sanitized || file.version != GRID_CONFIG_VERSION;
                 Ok(Some((configs, timeout, needs_save)))
             }
-            Err(primary_err) => {
-                match serde_json::from_str::<Vec<MonitorGridConfig>>(&data) {
-                    Ok(mut legacy_configs) => {
-                        println!("Detected legacy grid_config.json format. Migrating to version {}.", GRID_CONFIG_VERSION);
-                        let (configs, _) = Self::align_legacy_configs(
-                            monitors,
-                            &mut legacy_configs
-                        )?;
-                        Ok(Some((configs, DEFAULT_SELECTION_TIMEOUT_SECS, true)))
-                    }
-                    Err(_) =>
-                        Err(GridConfigError::ConfigParseError {
-                            path: path.clone(),
-                            source: primary_err,
-                        }),
+            Err(primary_err) => match serde_json::from_str::<Vec<MonitorGridConfig>>(&data) {
+                Ok(mut legacy_configs) => {
+                    println!(
+                        "Detected legacy grid_config.json format. Migrating to version {}.",
+                        GRID_CONFIG_VERSION
+                    );
+                    let (configs, _) = Self::align_legacy_configs(monitors, &mut legacy_configs)?;
+                    Ok(Some((configs, DEFAULT_SELECTION_TIMEOUT_SECS, true)))
                 }
-            }
+                Err(_) => Err(GridConfigError::ConfigParseError {
+                    path: path.clone(),
+                    source: primary_err,
+                }),
+            },
         }
     }
 
     fn align_stored_entries(
         monitors: &[Monitor],
-        entries: Vec<StoredMonitorEntry>
+        entries: Vec<StoredMonitorEntry>,
     ) -> Result<(Vec<MonitorGridConfig>, bool), GridConfigError> {
         let mut entry_map: HashMap<String, StoredGridSettings> = HashMap::new();
         for entry in entries {
@@ -386,14 +390,20 @@ impl GridConfigStore {
                 configs.push(config);
             } else {
                 sanitized = true;
-                println!("Grid config for monitor {} missing in file; using defaults.", monitor_id);
+                println!(
+                    "Grid config for monitor {} missing in file; using defaults.",
+                    monitor_id
+                );
                 configs.push(Self::default_config_for_monitor(monitor)?);
             }
         }
 
         if !entry_map.is_empty() {
             sanitized = true;
-            println!("Ignoring {} monitor entries not present in current system", entry_map.len());
+            println!(
+                "Ignoring {} monitor entries not present in current system",
+                entry_map.len()
+            );
         }
 
         Ok((configs, sanitized))
@@ -401,7 +411,7 @@ impl GridConfigStore {
 
     fn align_legacy_configs(
         monitors: &[Monitor],
-        configs: &mut [MonitorGridConfig]
+        configs: &mut [MonitorGridConfig],
     ) -> Result<(Vec<MonitorGridConfig>, bool), GridConfigError> {
         let mut by_index: HashMap<usize, MonitorGridConfig> = HashMap::new();
         for cfg in configs.iter_mut() {
@@ -450,7 +460,8 @@ impl GridConfigStore {
             return Err(GridConfigError::MonitorMismatch);
         }
 
-        let entries: Vec<StoredMonitorEntry> = self.monitor_ids
+        let entries: Vec<StoredMonitorEntry> = self
+            .monitor_ids
             .iter()
             .zip(self.configs.iter())
             .map(|(monitor_id, config)| StoredMonitorEntry {
@@ -470,8 +481,7 @@ impl GridConfigStore {
             monitors: entries,
         };
 
-        let data = serde_json
-            ::to_string_pretty(&file)
+        let data = serde_json::to_string_pretty(&file)
             .map_err(|source| GridConfigError::ConfigSerializeError { source })?;
 
         fs::write(&self.config_path, data).map_err(|source| GridConfigError::ConfigWriteError {
@@ -489,15 +499,20 @@ impl GridConfigStore {
 
         let mut buffer = String::new();
         buffer.push_str("# Tactile-Win Monitor Capabilities\n");
-        buffer.push_str(&format!("capabilities_version={}\n", GRID_CAPABILITIES_VERSION));
+        buffer.push_str(&format!(
+            "capabilities_version={}\n",
+            GRID_CAPABILITIES_VERSION
+        ));
         buffer.push_str(&format!("monitor_count={}\n\n", monitors.len()));
 
         for monitor in monitors {
-            let config = self.configs.get(monitor.index).ok_or(GridConfigError::MonitorMismatch)?;
+            let config = self
+                .configs
+                .get(monitor.index)
+                .ok_or(GridConfigError::MonitorMismatch)?;
             let min_cell_width = MonitorGridConfig::sanitize_cell_dimension(config.min_cell_width);
-            let min_cell_height = MonitorGridConfig::sanitize_cell_dimension(
-                config.min_cell_height
-            );
+            let min_cell_height =
+                MonitorGridConfig::sanitize_cell_dimension(config.min_cell_height);
             let bounds = GridBounds::for_monitor(monitor, min_cell_width, min_cell_height)?;
 
             buffer.push_str(&format!("[{}]\n", monitor_identifier(monitor)));
@@ -525,7 +540,7 @@ impl GridConfigStore {
 
     fn config_from_settings(
         monitor: &Monitor,
-        settings: StoredGridSettings
+        settings: StoredGridSettings,
     ) -> Result<(MonitorGridConfig, bool), GridConfigError> {
         let mut config = MonitorGridConfig {
             monitor_index: monitor.index,
@@ -549,11 +564,8 @@ impl GridConfigStore {
             changed = true;
         }
 
-        let bounds = GridBounds::for_monitor(
-            monitor,
-            config.min_cell_width,
-            config.min_cell_height
-        )?;
+        let bounds =
+            GridBounds::for_monitor(monitor, config.min_cell_width, config.min_cell_height)?;
 
         let original_cols = config.cols;
         let original_rows = config.rows;
@@ -564,32 +576,36 @@ impl GridConfigStore {
         config.cols = bounds.clamp_cols(config.cols);
         config.rows = bounds.clamp_rows(config.rows);
 
-        if
-            let Some(message) = dimension_adjustment_message(
-                "Column count",
-                original_cols,
-                config.cols,
-                MonitorGridConfig::MIN_COLS,
-                MonitorGridConfig::MAX_COLS,
-                bounds.max_cols
-            )
-        {
+        if let Some(message) = dimension_adjustment_message(
+            "Column count",
+            original_cols,
+            config.cols,
+            MonitorGridConfig::MIN_COLS,
+            MonitorGridConfig::MAX_COLS,
+            bounds.max_cols,
+        ) {
             changed = true;
-            println!("Grid config for monitor {}: {}", monitor_identifier(monitor), message);
+            println!(
+                "Grid config for monitor {}: {}",
+                monitor_identifier(monitor),
+                message
+            );
         }
 
-        if
-            let Some(message) = dimension_adjustment_message(
-                "Row count",
-                original_rows,
-                config.rows,
-                MonitorGridConfig::MIN_ROWS,
-                MonitorGridConfig::MAX_ROWS,
-                bounds.max_rows
-            )
-        {
+        if let Some(message) = dimension_adjustment_message(
+            "Row count",
+            original_rows,
+            config.rows,
+            MonitorGridConfig::MIN_ROWS,
+            MonitorGridConfig::MAX_ROWS,
+            bounds.max_rows,
+        ) {
             changed = true;
-            println!("Grid config for monitor {}: {}", monitor_identifier(monitor), message);
+            println!(
+                "Grid config for monitor {}: {}",
+                monitor_identifier(monitor),
+                message
+            );
         }
 
         Ok((config, changed))
@@ -621,7 +637,7 @@ fn dimension_adjustment_message(
     adjusted: u32,
     min_allowed: u32,
     global_max: u32,
-    monitor_max: u32
+    monitor_max: u32,
 ) -> Option<String> {
     if original == adjusted {
         return None;

@@ -6,7 +6,7 @@
       "monitor_id": "primary",
       "grid": {
         "rows": 3,
-        "cols": 4,
+        "cols": 5,
         "min_cell_width": 300,
         "min_cell_height": 300
       }

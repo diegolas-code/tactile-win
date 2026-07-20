@@ -3,17 +3,16 @@
 //! Phase 1: Infrastructure (DPI awareness, monitor enumeration, window management) ✓
 //! Phase 2: Domain Logic (keyboard layout, grid geometry, selection process) ✓
 
-use std::sync::{ atomic::{ AtomicBool, Ordering }, Arc, OnceLock };
-use windows::Win32::Foundation::*;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Console::{
-    SetConsoleCtrlHandler,
-    CTRL_BREAK_EVENT,
-    CTRL_C_EVENT,
-    CTRL_CLOSE_EVENT,
-    CTRL_LOGOFF_EVENT,
-    CTRL_SHUTDOWN_EVENT,
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
 };
+use windows::Win32::Foundation::*;
+use windows::Win32::System::Console::{
+    CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT,
+    SetConsoleCtrlHandler,
+};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
@@ -29,10 +28,7 @@ static SHUTDOWN_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
     match ctrl_type {
-        | CTRL_C_EVENT
-        | CTRL_BREAK_EVENT
-        | CTRL_CLOSE_EVENT
-        | CTRL_LOGOFF_EVENT
+        CTRL_C_EVENT | CTRL_BREAK_EVENT | CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT
         | CTRL_SHUTDOWN_EVENT => {
             if let Some(flag) = SHUTDOWN_FLAG.get() {
                 flag.store(true, Ordering::SeqCst);
@@ -112,7 +108,10 @@ fn create_main_window() -> Result<HWND, Box<dyn std::error::Error>> {
         RegisterClassW(&wc);
 
         // Create hidden window
-        let window_name: Vec<u16> = "TactileWin".encode_utf16().chain(std::iter::once(0)).collect();
+        let window_name: Vec<u16> = "TactileWin"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -126,7 +125,7 @@ fn create_main_window() -> Result<HWND, Box<dyn std::error::Error>> {
             None,
             None,
             instance,
-            None
+            None,
         );
 
         if hwnd.0 == 0 {
@@ -143,7 +142,7 @@ unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
-    lparam: LPARAM
+    lparam: LPARAM,
 ) -> LRESULT {
     // Check for custom keyboard event message
     const WM_TACTILE_KEY_EVENT: u32 = 0x8000;
@@ -151,7 +150,10 @@ unsafe extern "system" fn window_proc(
     if msg == WM_TACTILE_KEY_EVENT {
         // Get the application controller from window user data
         // For now, just log the event - we'll need to pass controller reference
-        println!("Main window: Received keyboard event, vk_code: {}", wparam.0);
+        println!(
+            "Main window: Received keyboard event, vk_code: {}",
+            wparam.0
+        );
         // TODO: Call controller.handle_keyboard_event(wparam) once we can access controller
     }
 

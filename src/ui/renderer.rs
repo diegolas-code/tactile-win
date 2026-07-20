@@ -3,16 +3,9 @@
 //! Implements grid visualization with letter labels using tiny-skia for high-performance
 //! rendering. Separates layout calculation from rendering for better testability.
 
-use ab_glyph::{ point, Font, FontArc, PxScale };
+use ab_glyph::{Font, FontArc, PxScale, point};
 use tiny_skia::{
-    Color,
-    Paint,
-    PathBuilder,
-    Pixmap,
-    Rect as SkiaRect,
-    Stroke,
-    StrokeDash,
-    Transform,
+    Color, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke, StrokeDash, Transform,
 };
 
 use crate::domain::core::Rect;
@@ -25,10 +18,8 @@ pub enum RendererError {
     #[error("Failed to create pixmap for rendering")]
     PixmapCreationFailed,
 
-    #[error("Invalid grid dimensions: {width}x{height}")] InvalidGridDimensions {
-        width: i32,
-        height: i32,
-    },
+    #[error("Invalid grid dimensions: {width}x{height}")]
+    InvalidGridDimensions { width: i32, height: i32 },
 
     #[error("Rendering operation failed")]
     RenderingFailed,
@@ -158,8 +149,9 @@ impl GridLayout {
                         (col as f32) * cell_width,
                         (row as f32) * cell_height,
                         cell_width,
-                        cell_height
-                    ).unwrap();
+                        cell_height,
+                    )
+                    .unwrap();
 
                     self.letters.push(LetterPosition {
                         letter,
@@ -184,13 +176,13 @@ pub struct GridRenderer {
 impl GridRenderer {
     /// Create a new grid renderer
     pub fn new() -> Self {
-        const FONT_BYTES: &[u8] = include_bytes!(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/IBMPlexMono-Bold.ttf")
-        );
+        const FONT_BYTES: &[u8] = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/fonts/IBMPlexMono-Bold.ttf"
+        ));
 
-        let font = FontArc::try_from_slice(FONT_BYTES).expect(
-            "IBMPlexMono-Bold.ttf must be present in assets/fonts"
-        );
+        let font = FontArc::try_from_slice(FONT_BYTES)
+            .expect("IBMPlexMono-Bold.ttf must be present in assets/fonts");
 
         Self { font }
     }
@@ -198,9 +190,8 @@ impl GridRenderer {
     /// Render a grid layout to a pixmap
     pub fn render_layout(&mut self, layout: &GridLayout) -> Result<Pixmap, RendererError> {
         // Create pixmap for rendering
-        let mut pixmap = Pixmap::new(layout.canvas_width as u32, layout.canvas_height as u32).ok_or(
-            RendererError::PixmapCreationFailed
-        )?;
+        let mut pixmap = Pixmap::new(layout.canvas_width as u32, layout.canvas_height as u32)
+            .ok_or(RendererError::PixmapCreationFailed)?;
 
         // Mild translucent background for contrast
         pixmap.fill(Color::from_rgba8(8, 12, 24, 180));
@@ -245,7 +236,7 @@ impl GridRenderer {
     fn render_letters(
         &mut self,
         pixmap: &mut Pixmap,
-        letters: &[LetterPosition]
+        letters: &[LetterPosition],
     ) -> Result<(), RendererError> {
         for letter_pos in letters {
             self.render_single_letter(pixmap, letter_pos)?;
@@ -258,7 +249,7 @@ impl GridRenderer {
     fn render_single_letter(
         &mut self,
         pixmap: &mut Pixmap,
-        letter_pos: &LetterPosition
+        letter_pos: &LetterPosition,
     ) -> Result<(), RendererError> {
         let width = pixmap.width() as i32;
         let height = pixmap.height() as i32;
@@ -266,10 +257,8 @@ impl GridRenderer {
         let scale = PxScale::from(letter_pos.font_size);
         let glyph_id = self.font.glyph_id(letter_pos.letter);
 
-        let initial_position = glyph_id.with_scale_and_position(
-            scale,
-            point(letter_pos.x, letter_pos.y)
-        );
+        let initial_position =
+            glyph_id.with_scale_and_position(scale, point(letter_pos.x, letter_pos.y));
 
         let Some(initial_outline) = self.font.outline_glyph(initial_position) else {
             return Ok(());
@@ -283,7 +272,7 @@ impl GridRenderer {
 
         let positioned = glyph_id.with_scale_and_position(
             scale,
-            point(letter_pos.x + offset_x, letter_pos.y + offset_y)
+            point(letter_pos.x + offset_x, letter_pos.y + offset_y),
         );
 
         if let Some(outline) = self.font.outline_glyph(positioned) {
@@ -372,12 +361,17 @@ mod tests {
 
     #[test]
     fn grid_layout_creation() {
-        let grid = Grid::new(2, 3, Rect {
-            x: 0,
-            y: 0,
-            w: 1920,
-            h: 1080,
-        }).unwrap();
+        let grid = Grid::new(
+            2,
+            3,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+        )
+        .unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -391,7 +385,10 @@ mod tests {
         assert!(!grid_layout.lines.is_empty(), "Grid should have lines");
 
         // Should have letters when active
-        assert!(!grid_layout.letters.is_empty(), "Active grid should have letters");
+        assert!(
+            !grid_layout.letters.is_empty(),
+            "Active grid should have letters"
+        );
 
         // Check canvas dimensions
         assert_eq!(grid_layout.canvas_width, 1920.0);
@@ -400,12 +397,17 @@ mod tests {
 
     #[test]
     fn inactive_grid_layout() {
-        let grid = Grid::new(2, 3, Rect {
-            x: 0,
-            y: 0,
-            w: 1920,
-            h: 1080,
-        }).unwrap();
+        let grid = Grid::new(
+            2,
+            3,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+        )
+        .unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -417,17 +419,25 @@ mod tests {
 
         // Should have lines but no letters when inactive
         assert!(!grid_layout.lines.is_empty(), "Grid should have lines");
-        assert!(grid_layout.letters.is_empty(), "Inactive grid should have no letters");
+        assert!(
+            grid_layout.letters.is_empty(),
+            "Inactive grid should have no letters"
+        );
     }
 
     #[test]
     fn dpi_scaling() {
-        let grid = Grid::new(2, 2, Rect {
-            x: 0,
-            y: 0,
-            w: 1920,
-            h: 1080,
-        }).unwrap();
+        let grid = Grid::new(
+            2,
+            2,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+        )
+        .unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -439,21 +449,18 @@ mod tests {
         let scaled_layout = GridLayout::from_grid(&grid, canvas_rect, true, 2.0);
 
         // Line width should scale with DPI
-        if
-            let (Some(normal_line), Some(scaled_line)) = (
-                normal_layout.lines.first(),
-                scaled_layout.lines.first(),
-            )
+        if let (Some(normal_line), Some(scaled_line)) =
+            (normal_layout.lines.first(), scaled_layout.lines.first())
         {
-            assert!(scaled_line.width > normal_line.width, "Scaled lines should be thicker");
+            assert!(
+                scaled_line.width > normal_line.width,
+                "Scaled lines should be thicker"
+            );
         }
 
         // Font size should scale with DPI
-        if
-            let (Some(normal_letter), Some(scaled_letter)) = (
-                normal_layout.letters.first(),
-                scaled_layout.letters.first(),
-            )
+        if let (Some(normal_letter), Some(scaled_letter)) =
+            (normal_layout.letters.first(), scaled_layout.letters.first())
         {
             assert!(
                 scaled_letter.font_size > normal_letter.font_size,
@@ -471,12 +478,17 @@ mod tests {
     #[test]
     fn render_simple_layout() {
         let mut renderer = GridRenderer::new();
-        let grid = Grid::new(2, 2, Rect {
-            x: 0,
-            y: 0,
-            w: 1000,
-            h: 800,
-        }).unwrap();
+        let grid = Grid::new(
+            2,
+            2,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 1000,
+                h: 800,
+            },
+        )
+        .unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
@@ -500,12 +512,17 @@ mod tests {
     #[test]
     fn pixmap_to_rgba_conversion() {
         let mut renderer = GridRenderer::new();
-        let grid = Grid::new(2, 2, Rect {
-            x: 0,
-            y: 0,
-            w: 1000,
-            h: 800,
-        }).unwrap();
+        let grid = Grid::new(
+            2,
+            2,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 1000,
+                h: 800,
+            },
+        )
+        .unwrap();
         let canvas_rect = Rect {
             x: 0,
             y: 0,
